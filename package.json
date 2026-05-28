@@ -1,0 +1,25 @@
+{
+  "name": "racenroam-live-race-hub",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "RaceNRoam Live Race Hub – Stream-safe motorsports companion dashboard for TikTok/OBS",
+  "scripts": {
+    "dev": "vite",
+    "dev:functions": "wrangler pages dev --proxy 5173 --compatibility-date=2024-09-23",
+    "build": "vite build",
+    "preview": "vite preview",
+    "pages:dev": "wrangler pages dev dist --compatibility-date=2024-09-23",
+    "pages:deploy": "wrangler pages deploy dist"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.2",
+    "vite": "^8.0.14",
+    "wrangler": "^4.95.0"
+  }
+}

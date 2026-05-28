@@ -1,0 +1,29 @@
+name = "racenroam-live-race-hub"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "dist"
+
+# ============================================================
+# Cloudflare KV Namespace – Optional server-side caching
+# ============================================================
+# Step 1: Create a KV namespace in Cloudflare Dashboard or via:
+#   wrangler kv namespace create RACE_HUB_CACHE
+# Step 2: Uncomment the block below and fill in the ID:
+#
+# [[kv_namespaces]]
+# binding = "RACE_HUB_CACHE"
+# id = "YOUR_KV_NAMESPACE_ID_HERE"
+# preview_id = "YOUR_PREVIEW_KV_NAMESPACE_ID_HERE"
+
+# ============================================================
+# Default Variable Values (override in Cloudflare Dashboard)
+# ============================================================
+[vars]
+ENABLE_LIVE_F1 = "true"
+ENABLE_LIVE_NASCAR = "false"
+ENABLE_LIVE_INDYCAR = "false"
+ENABLE_LIVE_IMSA_WEC = "false"
+ENABLE_LIVE_MOTOGP = "false"
+WEATHER_PROVIDER = "open-meteo"
+DEFAULT_CACHE_TTL_SECONDS = "300"
+LIVE_CACHE_TTL_SECONDS = "30"
+WEATHER_CACHE_TTL_SECONDS = "600"

@@ -1,0 +1,6 @@
+export { getFallbackF1Data }      from './f1Fallback.js'
+export { getFallbackNascarData }  from './nascarFallback.js'
+export { getFallbackIndyCarData } from './indycarFallback.js'
+export { getFallbackImsaWecData } from './imsaWecFallback.js'
+export { getFallbackMotoGPData }  from './motogpFallback.js'
+export { getCalendarFallback }    from './calendarFallback.js'
