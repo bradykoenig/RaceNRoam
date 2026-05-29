@@ -185,17 +185,7 @@ export default function LiveRacePanel({ liveData, series, compact = false }) {
   if (liveData.noFreeApi) return <NoLiveApiPanel data={liveData} />
 
   if (!liveData.isLive) {
-    // Show which session is next/last so users know live data is wired
-    return (
-      <div className="live-panel live-panel-idle">
-        <div className="live-idle-msg">
-          <span className="live-idle-dot" />
-          {liveData.session
-            ? <>Live timing ready · {CATEGORY_LABEL[liveData.session.category] || liveData.session.name} at {liveData.session.circuit}</>
-            : 'Live timing will appear here when a session starts'}
-        </div>
-      </div>
-    )
+    return null
   }
 
   const { session, positions = [], locations = [], raceControl = [], weather, category } = liveData

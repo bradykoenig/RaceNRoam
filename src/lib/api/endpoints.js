@@ -22,7 +22,7 @@ export const SERIES_META = {
     color: '#e10600',
     cssVar: 'var(--color-f1)',
     badgeClass: 'badge-f1',
-    path: '/f1',
+    path: '/watch-party/f1',
     icon: '🏎️',
   },
   nascar: {
@@ -32,7 +32,7 @@ export const SERIES_META = {
     color: '#f5be41',
     cssVar: 'var(--color-nascar)',
     badgeClass: 'badge-nascar',
-    path: '/nascar',
+    path: '/watch-party/nascar',
     icon: '🏁',
   },
   indycar: {
@@ -42,7 +42,7 @@ export const SERIES_META = {
     color: '#2563eb',
     cssVar: 'var(--color-indycar)',
     badgeClass: 'badge-indycar',
-    path: '/indycar',
+    path: '/watch-party/indycar',
     icon: '⚡',
   },
   'imsa-wec': {
@@ -52,7 +52,7 @@ export const SERIES_META = {
     color: '#0ea5e9',
     cssVar: 'var(--color-imsa)',
     badgeClass: 'badge-imsa',
-    path: '/imsa-wec',
+    path: '/watch-party/imsa-wec',
     icon: '🕐',
   },
   motogp: {
@@ -62,7 +62,7 @@ export const SERIES_META = {
     color: '#cc2222',
     cssVar: 'var(--color-motogp)',
     badgeClass: 'badge-motogp',
-    path: '/motogp',
+    path: '/watch-party/motogp',
     icon: '🏍️',
   },
 }

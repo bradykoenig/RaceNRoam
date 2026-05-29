@@ -1,0 +1,44 @@
+/* RaceNRoam Merch Site Styles — scoped to .rn-app wrapper */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* shadcn/Lovable CSS variables — used by merch site components */
+.rn-app {
+  --background: 0 0% 4%;
+  --foreground: 0 0% 96%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 6%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 0 100% 40%;
+  --primary-foreground: 0 0% 96%;
+  --primary-bright: 0 100% 55%;
+  --primary-dark: 0 100% 27%;
+  --secondary: 0 0% 18%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 18%;
+  --muted-foreground: 0 0% 53%;
+  --accent: 0 0% 18%;
+  --accent-foreground: 0 0% 96%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 96%;
+  --border: 0 0% 18%;
+  --input: 0 0% 14%;
+  --ring: 0 100% 55%;
+  --radius: 0;
+  --grey-text: 0 0% 73%;
+  --grey-light: 0 0% 53%;
+  --grey-dark: 0 0% 10%;
+  --grey-mid: 0 0% 18%;
+}
+
+.rn-app * {
+  border-color: hsl(var(--border));
+}
+
+.rn-app body, .rn-app {
+  font-family: 'Rajdhani', sans-serif;
+}
