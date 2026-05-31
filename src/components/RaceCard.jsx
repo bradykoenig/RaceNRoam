@@ -24,13 +24,13 @@ export default function RaceCard({ race, series, showCountdown = true }) {
           <div>
             {race.flag && <span style={{ fontSize: '1.5rem', marginRight: 'var(--sp-2)' }}>{race.flag}</span>}
             <h3 className="race-card-name">{race.name}</h3>
-            {(race.track || race.location) && (
+            {(race.track && race.track !== 'TBD') || (race.location && race.location !== 'TBD') ? (
               <p className="race-card-track">
-                {race.track && <span>{race.track}</span>}
-                {race.track && race.location && <span> · </span>}
-                {race.location && <span>{race.location}</span>}
+                {race.track && race.track !== 'TBD' && <span>{race.track}</span>}
+                {(race.track && race.track !== 'TBD') && (race.location && race.location !== 'TBD') && <span> · </span>}
+                {race.location && race.location !== 'TBD' && <span>{race.location}</span>}
               </p>
-            )}
+            ) : null}
           </div>
           <StatusBadge status={race.status || 'Upcoming'} />
         </div>

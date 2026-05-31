@@ -274,7 +274,8 @@ function IdleStreamBody({ d, meta, series }) {
           <>
             <div className="stream-race-title">{race.name}</div>
             <div className="stream-track">
-              {race.track}{race.location ? ` · ${race.location}` : ''}
+              {race.track && race.track !== 'TBD' ? race.track : ''}
+              {race.location && race.location !== 'TBD' ? ` · ${race.location}` : ''}
               {race.round ? ` · Round ${race.round}` : ''}
             </div>
             {weather && (

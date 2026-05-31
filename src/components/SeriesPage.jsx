@@ -29,8 +29,8 @@ export default function SeriesPage({ series, data, loading, error, onRefresh }) 
   function getRaceSubtitle() {
     if (!race) return '2026 Season'
     const parts = []
-    if (race.track && race.track.trim()) parts.push(race.track)
-    if (race.location && race.location.trim()) parts.push(race.location)
+    if (race.track && race.track.trim() && race.track !== 'TBD') parts.push(race.track)
+    if (race.location && race.location.trim() && race.location !== 'TBD') parts.push(race.location)
     if (race.round) parts.push(`Round ${race.round}`)
     return parts.length > 0 ? parts.join(' · ') : race.name || '2026 Season'
   }
