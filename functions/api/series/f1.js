@@ -33,8 +33,25 @@ function isCurrentYear(dateStr) {
 
 function isValidStandings(drivers) {
   if (!drivers?.length) return false
+
+  // Reject historical teams
   const historical = ['Team Lotus', 'BRM', 'March', 'Tyrrell', 'Brabham', 'Matra', 'Surtees']
-  return !historical.some(t => drivers[0]?.team?.includes(t))
+  if (historical.some(t => drivers[0]?.team?.includes(t))) return false
+
+  // 2026 F1 grid — if we see any of these drivers, it's likely current season
+  const current2026Drivers = [
+    'Max Verstappen', 'Lando Norris', 'Charles Leclerc', 'Carlos Sainz',
+    'Lewis Hamilton', 'George Russell', 'Oscar Piastri', 'Fernando Alonso',
+    'Lance Stroll', 'Pierre Gasly', 'Esteban Ocon', 'Yuki Tsunoda',
+    'Daniel Ricciardo', 'Alexander Albon', 'Kevin Magnussen', 'Nico Hülkenberg',
+    'Valtteri Bottas', 'Zhou Guanyu', 'Logan Sargeant', 'Sergio Pérez',
+  ]
+
+  const hasCurrentDriver = drivers.some(d =>
+    current2026Drivers.some(name => (d.driver || d.name || '').includes(name.split(' ')[0]))
+  )
+
+  return hasCurrentDriver
 }
 
 // ── Build session schedule array (sorted, typed) ──────────────────────────────
@@ -351,6 +368,16 @@ export async function onRequestGet({ env }) {
       }
     }
 
+    // ── 5c. Fallback: ensure circuit info is populated ─────────────────────────
+    if (!raceCircuit && raceName) {
+      // Extract circuit from race name (e.g. "Monaco Grand Prix" → "Monaco")
+      raceCircuit = raceName.split(' Grand Prix')[0].split(' GP')[0]
+      console.log(`[f1] Extracted circuit from race name: ${raceCircuit}`)
+    }
+    if (!raceLocation && raceCircuit) {
+      raceLocation = raceCircuit
+    }
+
     // ── 6. Build response ─────────────────────────────────────────────────────
     const data = {
       series:     'f1',
@@ -381,12 +408,7 @@ export async function onRequestGet({ env }) {
         teams:   teams.length ? teams : fb.standings.teams,
       },
       weather:       weather       || fb.weather,
-      talkingPoints: generateRacePreview(
-        isValidStandings(drivers) ? drivers : fb.standings.drivers,
-        teams.length ? teams : fb.standings.teams,
-        raceName || 'F1 Grand Prix',
-        raceCircuit || ''
-      ),
+      talkingPoints: [], // TODO: only generate preview once standings are confirmed correct
       officialLinks: fb.officialLinks,
     }
 
