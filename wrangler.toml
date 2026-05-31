@@ -5,10 +5,12 @@ pages_build_output_dir = "dist"
 # ============================================================
 # Cloudflare KV Namespace – Caching for live data
 # ============================================================
-[[kv_namespaces]]
-binding = "RACE_HUB_CACHE"
-id = "5d2b54d823d1479b86a286b20f445e35"
-preview_id = "c66d82a2474d458cb705d3a46ca848a3"
+# KV caching disabled for now - site works fine with HTTP caching
+# Can be re-enabled later once Cloudflare propagates the namespace
+# [[kv_namespaces]]
+# binding = "RACE_HUB_CACHE"
+# id = "5d2b54d823d1479b86a286b20f445e35"
+# preview_id = "c66d82a2474d458cb705d3a46ca848a3"
 
 # ============================================================
 # Default Variable Values (override in Cloudflare Dashboard)
