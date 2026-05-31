@@ -1,89 +1,142 @@
-// GET /api/live?series=f1|nascar|indycar|motogp|imsa-wec
-// Returns live session data when a race/session is active.
-// F1:     OpenF1 (free, real-time)
-// NASCAR: NASCAR.com public feed (free)
-// Others: No free live API available
+/**
+ * GET /api/live?series=f1|nascar|...
+ *
+ * F1 implementation spec:
+ *  - Fetches OpenF1 REST endpoints via f1LiveProvider (each endpoint cached via cfCache)
+ *  - Caches the full normalized payload in Cloudflare Cache for 10s
+ *  - On ANY failure (429, network, timeout): returns last cached payload with stale flag
+ *  - Never crashes the frontend — always returns a valid JSON response
+ *  - Payload always includes: source, mode, dataAgeSeconds, fetchedAt
+ */
 
-import { buildResponse, corsOptionsResponse } from '../_lib/utils/apiResponse.js'
-import { getF1LiveData, getF1Locations } from '../_lib/providers/f1/f1LiveProvider.js'
-import { getNascarLiveData }              from '../_lib/providers/nascar/nascarLiveProvider.js'
-import { cacheGet, cacheSet, getCacheTtl } from '../_lib/utils/cache.js'
+import { corsOptionsResponse }    from '../_lib/utils/apiResponse.js'
+import { getF1LiveData }          from '../_lib/providers/f1/f1LiveProvider.js'
+import { getNascarLiveData }      from '../_lib/providers/nascar/nascarLiveProvider.js'
 
-const NOT_AVAILABLE = {
-  'indycar':  { name: 'IndyCar',  url: 'https://racecontrol.indycar.com/timing' },
-  'motogp':   { name: 'MotoGP',   url: 'https://www.motogp.com/en/live' },
-  'imsa-wec': { name: 'IMSA/WEC', url: 'https://www.fiawec.com/en/live' },
-}
+const CORS = { 'Access-Control-Allow-Origin': '*' }
 
-function json(body, cacheSeconds = 30) {
+// Cache the entire normalized response for 10s so many simultaneous viewers
+// share one real OpenF1 call instead of each triggering their own.
+const FULL_RESPONSE_CACHE_KEY = 'https://racenroam.com/__live_f1_payload'
+const FULL_RESPONSE_TTL_S     = 10
+
+function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
+    status,
     headers: {
-      'Content-Type':                'application/json',
-      'Cache-Control':               `no-store, max-age=${cacheSeconds}`,
-      'Access-Control-Allow-Origin': '*',
+      'Content-Type':  'application/json',
+      'Cache-Control': 'no-store',
+      ...CORS,
     },
   })
 }
 
-export async function onRequestGet({ request, env }) {
-  const series = new URL(request.url).searchParams.get('series') || 'f1'
-  const cacheKey = `live:${series}`
+async function getCachedFullResponse() {
+  try {
+    const cache = await caches.open('racenroam-live-full')
+    const hit   = await cache.match(FULL_RESPONSE_CACHE_KEY)
+    if (!hit) return null
+    const data = await hit.json()
+    return data
+  } catch { return null }
+}
 
-  // ── F1 via OpenF1 ─────────────────────────────────────────
-  if (series === 'f1') {
-    // Try KV cache first
-    const kvCached = await cacheGet(env, cacheKey)
-    if (kvCached) return json({ ok: true, series: 'f1', _cacheHit: true, ...kvCached })
+async function setCachedFullResponse(payload) {
+  try {
+    const cache = await caches.open('racenroam-live-full')
+    const resp  = new Response(JSON.stringify(payload), {
+      headers: {
+        'Content-Type':  'application/json',
+        'Cache-Control': `public, max-age=${FULL_RESPONSE_TTL_S}`,
+      },
+    })
+    await cache.put(FULL_RESPONSE_CACHE_KEY, resp)
+  } catch { /* non-fatal */ }
+}
 
-    try {
-      const data = await getF1LiveData()
+// ── F1 handler ────────────────────────────────────────────────────────────────
 
-      if (data.isLive && data.session?.key) {
-        try { data.locations = await getF1Locations(data.session.key) }
-        catch { data.locations = [] }
-      }
-
-      // Cache in KV for 20 seconds
-      await cacheSet(env, cacheKey, data, 20)
-      return json({ ok: true, series: 'f1', ...data }, 20)
-    } catch (err) {
-      // On any error (including rate limit), serve stale KV cache
-      const stale = await cacheGet(env, cacheKey)
-      if (stale) return json({ ok: true, series: 'f1', _stale: true, ...stale }, 5)
-      return json({ ok: false, series: 'f1', isLive: false, error: err.message }, 5)
-    }
+async function handleF1() {
+  // 1. Check full-response cache (serves most requests with zero OpenF1 calls)
+  const fullCached = await getCachedFullResponse()
+  if (fullCached) {
+    return jsonResponse({ ...fullCached, _fullCacheHit: true })
   }
 
-  // ── NASCAR via NASCAR.com public feed ─────────────────────
-  if (series === 'nascar') {
-    const kvCached = await cacheGet(env, cacheKey)
-    if (kvCached) return json({ ok: true, series: 'nascar', _cacheHit: true, ...kvCached })
+  // 2. Fetch fresh data
+  let payload
+  try {
+    payload = await getF1LiveData()
+  } catch (err) {
+    // 3. Fetch failed — return last stale payload if we have one, else a safe empty shell
+    const stale = await getCachedFullResponse()
+    if (stale) {
+      return jsonResponse({
+        ...stale,
+        _stale:  true,
+        _error:  err.message,
+        mode:    'best_effort_live',
+        source:  'OpenF1 free REST',
+      })
+    }
 
+    // No cached data at all — return safe empty shell so frontend never crashes
+    return jsonResponse({
+      ok:             false,
+      source:         'OpenF1 free REST',
+      mode:           'best_effort_live',
+      isLive:         false,
+      _error:         err.message,
+      dataAgeSeconds: null,
+      fetchedAt:      new Date().toISOString(),
+      positions:      [],
+      raceControl:    [],
+      trackStatus:    { label: 'NO DATA', color: '#444', type: 'unknown' },
+      session:        null,
+      weather:        null,
+    })
+  }
+
+  // 4. Success — cache and return
+  await setCachedFullResponse(payload)
+  return jsonResponse(payload)
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+
+export async function onRequestGet({ request }) {
+  const series = new URL(request.url).searchParams.get('series') || 'f1'
+
+  if (series === 'f1') {
+    return handleF1()
+  }
+
+  if (series === 'nascar') {
     try {
       const data = await getNascarLiveData()
-      await cacheSet(env, cacheKey, data, 20)
-      return json({ ok: true, series: 'nascar', ...data }, 20)
+      return jsonResponse({ ok: true, series: 'nascar', ...data })
     } catch (err) {
-      const stale = await cacheGet(env, cacheKey)
-      if (stale) return json({ ok: true, series: 'nascar', _stale: true, ...stale }, 5)
-      return json({ ok: false, series: 'nascar', isLive: false, error: err.message }, 5)
+      return jsonResponse({ ok: false, series: 'nascar', isLive: false, error: err.message })
     }
   }
 
-  // ── Other series – no free live timing API ────────────────
-  const info = NOT_AVAILABLE[series]
-  if (info) {
-    return json({
+  const officialUrls = {
+    indycar:  'https://racecontrol.indycar.com/timing',
+    motogp:   'https://www.motogp.com/en/live',
+    'imsa-wec': 'https://www.fiawec.com/en/live',
+  }
+
+  if (officialUrls[series]) {
+    return jsonResponse({
       ok:          true,
       series,
       isLive:      false,
       noFreeApi:   true,
-      officialUrl: info.url,
-      message:     `No free live timing API is available for ${info.name}. Visit the official live timing page for real-time data.`,
+      officialUrl: officialUrls[series],
     })
   }
 
-  return json({ ok: false, series, isLive: false, error: 'Unknown series' }, 0)
+  return jsonResponse({ ok: false, series, isLive: false, error: 'Unknown series' }, 400)
 }
 
 export async function onRequestOptions() { return corsOptionsResponse() }

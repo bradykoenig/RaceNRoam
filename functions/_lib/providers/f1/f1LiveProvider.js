@@ -1,17 +1,32 @@
-// F1 live data via OpenF1 (https://openf1.org/) — free, no API key, real-time
+// F1 live data via OpenF1 (https://openf1.org/) — free REST polling, no API key
 // Covers: Free Practice 1/2/3, Sprint Qualifying, Sprint Race, Qualifying Q1/Q2/Q3, Race
+// Uses Cloudflare Cache API to prevent rate limits — only one real request per TTL
+
+import { cachedFetchJson } from '../../utils/cfCache.js'
 
 const BASE = 'https://api.openf1.org/v1'
 
+// Per-endpoint cache TTLs — match spec exactly
+const CACHE_TTL = {
+  sessions:      60,
+  position:      10,
+  intervals:     10,
+  car_data:       5,
+  track_status:   5,
+  race_control:  10,   // spec: 10s
+  weather:       20,
+  drivers:      300,
+  laps:          15,
+  stints:        60,
+  location:       8,
+}
+
 async function get(path, params = {}) {
-  const qs = new URLSearchParams(params).toString()
+  const qs  = new URLSearchParams(params).toString()
   const url = `${BASE}${path}${qs ? `?${qs}` : ''}`
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(6000),
-  })
-  if (!res.ok) throw new Error(`OpenF1 ${path} → HTTP ${res.status}`)
-  return res.json()
+  const key = path.replace('/', '').split('?')[0]
+  const ttl = CACHE_TTL[key] ?? 15
+  return cachedFetchJson(url, {}, ttl)
 }
 
 // Reduce an array to the latest record per driver
@@ -44,6 +59,8 @@ function getSessionCategory(session) {
 }
 
 export async function getF1LiveData() {
+  const fetchedAt = Date.now()
+
   // 1. Get current/latest session
   const sessions = await get('/sessions', { session_key: 'latest' })
   const session  = sessions?.[0]
@@ -60,19 +77,21 @@ export async function getF1LiveData() {
   const isQual     = category === 'qualifying' || category === 'sprint-qualifying'
   const isPractice = category === 'practice'
 
-  // 2. Fetch all relevant endpoints in parallel
+  // 2. Fetch all endpoints in parallel
   const requests = {
-    positions: get('/position',     { session_key: sessionKey }),
-    intervals: get('/intervals',    { session_key: sessionKey }),
-    raceCtrl:  get('/race_control', { session_key: sessionKey }),
-    weather:   get('/weather',      { session_key: sessionKey }),
-    drivers:   get('/drivers',      { session_key: sessionKey }),
-    laps:      get('/laps',         { session_key: sessionKey }),   // lap times for all sessions
-    stints:    get('/stints',       { session_key: sessionKey }),   // tire compounds
+    positions:   get('/position',      { session_key: sessionKey }),
+    intervals:   get('/intervals',     { session_key: sessionKey }),
+    raceCtrl:    get('/race_control',  { session_key: sessionKey }),
+    weather:     get('/weather',       { session_key: sessionKey }),
+    drivers:     get('/drivers',       { session_key: sessionKey }),
+    laps:        get('/laps',          { session_key: sessionKey }),
+    stints:      get('/stints',        { session_key: sessionKey }),
+    carData:     get('/car_data',      { session_key: sessionKey }),
+    trackStatus: get('/track_status',  { session_key: sessionKey }),
   }
 
   const results = await Promise.allSettled(Object.values(requests))
-  const [posR, intR, rcR, wxR, drvR, lapR, stintR] = results
+  const [posR, intR, rcR, wxR, drvR, lapR, stintR, carDataR, trackStatusR] = results
 
   // Driver lookup
   const drivers = {}
@@ -171,6 +190,91 @@ export async function getF1LiveData() {
     }
   }
 
+  // -- Track status --
+  const trackStatusArr = (trackStatusR.value || []).sort((a, b) => a.date > b.date ? 1 : -1)
+  const latestTrackStatus = trackStatusArr[trackStatusArr.length - 1]
+  const TRACK_STATUS_MAP = {
+    '1': { label: 'ALL CLEAR',            color: '#22c55e', type: 'green'  },
+    '2': { label: 'YELLOW FLAG',          color: '#f5c518', type: 'yellow' },
+    '3': { label: 'FLAG',                 color: '#f5c518', type: 'yellow' },
+    '4': { label: 'SAFETY CAR',           color: '#f97316', type: 'sc'     },
+    '5': { label: 'RED FLAG',             color: '#e8002d', type: 'red'    },
+    '6': { label: 'VIRTUAL SAFETY CAR',   color: '#f97316', type: 'vsc'    },
+    '7': { label: 'VSC ENDING',           color: '#facc15', type: 'vsc'    },
+  }
+  const trackStatus = latestTrackStatus
+    ? (TRACK_STATUS_MAP[String(latestTrackStatus.status)] || { label: latestTrackStatus.message || 'UNKNOWN', color: '#888', type: 'unknown' })
+    : { label: 'ALL CLEAR', color: '#22c55e', type: 'green' }
+
+  // -- Telemetry (latest sample per driver) --
+  const latestCarData = latestPerDriver(carDataR.value, 'driver_number')
+  const telemetryMap  = {}
+  for (const c of latestCarData) {
+    telemetryMap[c.driver_number] = {
+      speed:    c.speed,
+      rpm:      c.rpm,
+      gear:     c.n_gear,
+      throttle: c.throttle,
+      brake:    c.brake,
+      drs:      c.drs >= 8,   // DRS open when value >= 8
+    }
+  }
+
+  // -- Sector times + colors per driver --
+  // Build best sector times across all drivers for "purple" detection
+  const allLapsArr = lapR.value || []
+  const bestS1 = Math.min(...allLapsArr.map(l => l.duration_sector_1).filter(v => v > 0))
+  const bestS2 = Math.min(...allLapsArr.map(l => l.duration_sector_2).filter(v => v > 0))
+  const bestS3 = Math.min(...allLapsArr.map(l => l.duration_sector_3).filter(v => v > 0))
+
+  const personalBestSectors = {}
+  for (const lap of allLapsArr) {
+    const dn = lap.driver_number
+    if (!personalBestSectors[dn]) personalBestSectors[dn] = { s1: Infinity, s2: Infinity, s3: Infinity }
+    if (lap.duration_sector_1 > 0) personalBestSectors[dn].s1 = Math.min(personalBestSectors[dn].s1, lap.duration_sector_1)
+    if (lap.duration_sector_2 > 0) personalBestSectors[dn].s2 = Math.min(personalBestSectors[dn].s2, lap.duration_sector_2)
+    if (lap.duration_sector_3 > 0) personalBestSectors[dn].s3 = Math.min(personalBestSectors[dn].s3, lap.duration_sector_3)
+  }
+
+  // Latest lap per driver for sector display
+  const latestLapPerDriver = {}
+  for (const lap of allLapsArr) {
+    const dn = lap.driver_number
+    if (!latestLapPerDriver[dn] || lap.lap_number > latestLapPerDriver[dn].lap_number) {
+      latestLapPerDriver[dn] = lap
+    }
+  }
+
+  function sectorColor(val, best, pb) {
+    if (!val || val <= 0) return 'grey'
+    if (val <= best) return 'purple'
+    if (val <= pb) return 'green'
+    return 'yellow'
+  }
+
+  function fmtSector(v) {
+    if (!v || v <= 0) return null
+    return v.toFixed(3)
+  }
+
+  // Merge telemetry + sectors into positions
+  for (const p of positions) {
+    const tel = telemetryMap[p.number]
+    if (tel) p.telemetry = tel
+
+    const ll  = latestLapPerDriver[p.number]
+    const pb  = personalBestSectors[p.number] || {}
+    if (ll) {
+      p.sectors = [
+        { time: fmtSector(ll.duration_sector_1), color: sectorColor(ll.duration_sector_1, bestS1, pb.s1) },
+        { time: fmtSector(ll.duration_sector_2), color: sectorColor(ll.duration_sector_2, bestS2, pb.s2) },
+        { time: fmtSector(ll.duration_sector_3), color: sectorColor(ll.duration_sector_3, bestS3, pb.s3) },
+      ]
+      p.lapNumber = ll.lap_number
+      p.isPitOutLap = ll.is_pit_out_lap
+    }
+  }
+
   // -- Race control messages --
   const allRC = (rcR.value || [])
     .filter(m => m.message)
@@ -208,23 +312,31 @@ export async function getF1LiveData() {
   }
 
   return {
+    // ── Spec-required metadata ────────────────────────────────
+    ok:             true,
+    source:         'OpenF1 free REST',
+    mode:           'best_effort_live',
+    dataAgeSeconds: Math.round((Date.now() - fetchedAt) / 1000),
+    fetchedAt:      new Date(fetchedAt).toISOString(),
+    // ── Session state ─────────────────────────────────────────
     isLive,
-    source:   'openf1',
-    category, // 'race' | 'qualifying' | 'practice' | 'sprint' | 'sprint-qualifying'
+    category,
+    trackStatus,
     session: {
-      key:      sessionKey,
-      name:     session.session_name,
-      type:     session.session_type,
+      key:       sessionKey,
+      name:      session.session_name,
+      type:      session.session_type,
       category,
-      segment:  sessionSegment,
-      circuit:  session.circuit_short_name,
-      country:  session.country_name,
+      segment:   sessionSegment,
+      circuit:   session.circuit_short_name,
+      country:   session.country_name,
       dateStart: session.date_start,
       dateEnd:   session.date_end,
-      // Race-specific lap count comes from position data (latest lap number)
-      lap: isRace ? (Math.max(...latestPos.map(p => p.lap ?? 0).filter(Boolean)) || null) : null,
+      lap:       isRace ? (Math.max(...latestPos.map(p => p.lap ?? 0).filter(Boolean)) || null) : null,
+      totalLaps: isRace ? session.total_laps || null : null,
     },
-    positions,
+    // ── Timing data ───────────────────────────────────────────
+    positions,       // includes .sectors, .telemetry, .gap, .interval, .compound, .tyreAge
     raceControl: allRC,
     weather,
   }

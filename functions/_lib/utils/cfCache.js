@@ -1,69 +1,92 @@
-// Cloudflare Cache API wrapper — caches responses at the edge
-// No KV needed. Works natively in all Cloudflare Workers/Pages Functions.
-// Serves stale data on rate limits so streams are never interrupted.
+/**
+ * Cloudflare Cache API wrapper
+ *
+ * - Caches every OpenF1 HTTP request at the edge with a per-endpoint TTL
+ * - On 429 (rate limit) or any network error, returns the last stale cached
+ *   response so the frontend never receives an error payload
+ * - cachedFetchJson always returns parsed JSON or throws with a clear message
+ */
 
-const CACHE_NAME = 'racenroam-f1-cache'
+const CACHE_NAME = 'racenroam-openf1-v1'
 
 export async function cachedFetch(url, options = {}, ttlSeconds = 30) {
   const cacheKey = new Request(url)
 
+  let cache
   try {
-    const cache = await caches.open(CACHE_NAME)
+    cache = await caches.open(CACHE_NAME)
+  } catch {
+    // Cloudflare Cache API unavailable (local dev) — fall through to live fetch
+  }
 
-    // Try cache first
-    const cached = await cache.match(cacheKey)
-    if (cached) {
-      const age = cached.headers.get('x-cache-age')
-      console.log(`Cache HIT: ${url} (age: ${age}s)`)
-      return cached.clone()
-    }
+  // ── 1. Try cache first ────────────────────────────────────────
+  if (cache) {
+    const hit = await cache.match(cacheKey).catch(() => null)
+    if (hit) return hit.clone()
+  }
 
-    // Fetch fresh
-    const response = await fetch(url, {
+  // ── 2. Fetch from origin ──────────────────────────────────────
+  let response
+  try {
+    response = await fetch(url, {
       ...options,
-      headers: { 'Accept': 'application/json', 'User-Agent': 'RaceNRoam/1.0', ...(options.headers || {}) },
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'RaceNRoam/1.0',
+        ...(options.headers || {}),
+      },
+      signal: AbortSignal.timeout(8000),
     })
-
-    if (response.ok) {
-      // Clone and cache with TTL headers
-      const body = await response.text()
-      const cachedResponse = new Response(body, {
-        status: response.status,
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': `public, max-age=${ttlSeconds}`,
-          'x-cache-age': '0',
-          'x-cached-at': new Date().toISOString(),
-        },
-      })
-      await cache.put(cacheKey, cachedResponse.clone())
-      return cachedResponse
-    }
-
-    // On rate limit (429) — return stale cache if available
-    if (response.status === 429) {
-      console.warn(`Rate limited on ${url} — serving stale cache`)
-      const stale = await cache.match(cacheKey)
-      if (stale) return stale.clone()
-    }
-
-    return response
-  } catch (err) {
-    console.error(`cachedFetch error for ${url}:`, err.message)
-    // Try cache as emergency fallback
-    try {
-      const cache = await caches.open(CACHE_NAME)
-      const stale = await cache.match(cacheKey)
+  } catch (fetchErr) {
+    // Network error — return stale cache if available
+    if (cache) {
+      const stale = await cache.match(cacheKey).catch(() => null)
       if (stale) {
-        console.warn(`Using stale cache as emergency fallback for ${url}`)
+        console.warn(`[cfCache] network error for ${url} — serving stale`)
         return stale.clone()
       }
-    } catch {}
-    throw err
+    }
+    throw new Error(`OpenF1 fetch failed: ${fetchErr.message}`)
   }
+
+  // ── 3. Rate limited — return stale cache or throw ─────────────
+  if (response.status === 429) {
+    console.warn(`[cfCache] 429 rate limit on ${url}`)
+    if (cache) {
+      const stale = await cache.match(cacheKey).catch(() => null)
+      if (stale) return stale.clone()
+    }
+    throw new Error(`OpenF1 rate limited (429): ${url}`)
+  }
+
+  // ── 4. Other non-OK response ──────────────────────────────────
+  if (!response.ok) {
+    if (cache) {
+      const stale = await cache.match(cacheKey).catch(() => null)
+      if (stale) return stale.clone()
+    }
+    throw new Error(`OpenF1 HTTP ${response.status}: ${url}`)
+  }
+
+  // ── 5. Success — cache and return ────────────────────────────
+  const body = await response.text()
+  const toCache = new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type':  'application/json',
+      'Cache-Control': `public, max-age=${ttlSeconds}`,
+      'x-cached-at':   new Date().toISOString(),
+    },
+  })
+
+  if (cache) {
+    await cache.put(cacheKey, toCache.clone()).catch(() => {})
+  }
+
+  return toCache
 }
 
 export async function cachedFetchJson(url, options = {}, ttlSeconds = 30) {
-  const response = await cachedFetch(url, options, ttlSeconds)
-  return response.json()
+  const res = await cachedFetch(url, options, ttlSeconds)
+  return res.json()
 }

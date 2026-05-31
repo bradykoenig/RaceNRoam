@@ -8,6 +8,7 @@ import Countdown from '../components/Countdown'
 import LiveRacePanel from '../components/LiveRacePanel'
 import RaceControlFeed from '../components/RaceControlFeed'
 import TrackMap from '../components/TrackMap'
+import LiveRaceHub from '../components/LiveRaceHub'
 
 const DEFAULT_SERIES = 'f1'
 const REFRESH_MS = 45 * 1000
@@ -302,7 +303,7 @@ function IdleStreamBody({ d, meta, series }) {
       <div className="stream-panels">
         <div className="stream-panel">
           <div className="stream-panel-hdr">Championship Standings</div>
-          {standings.slice(0, 6).map((dr, i) => (
+          {standings.slice(0, 8).map((dr, i) => (
             <div key={i} className="stream-standing-row">
               <span className="stream-standing-pos">{dr.pos || i + 1}</span>
               <span className="stream-standing-name">{dr.driver}</span>
@@ -400,6 +401,12 @@ export default function StreamPage() {
       ) : (
         /* ── IDLE MODE: countdown + standings + talking points ── */
         <IdleStreamBody d={d} meta={meta} series={series} />
+      )}
+      {/* ── Real-time hub (OpenF1 HTTP polling via Cloudflare) — F1 only ── */}
+      {series === 'f1' && (
+        <div style={{ marginTop: 24 }}>
+          <LiveRaceHub seriesData={d} />
+        </div>
       )}
 
       <div className="stream-footer">
