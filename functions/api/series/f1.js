@@ -261,6 +261,18 @@ export async function onRequestGet({ env }) {
     }
     if (!weather) weather = getFallbackWeather(raceCircuit || '')
 
+    // ── 5b. Fallback: if raceStart is still null, extract from schedule ──────
+    if (!raceStart && schedule.length > 0) {
+      const raceSession = schedule.find(s =>
+        s.session?.toLowerCase() === 'race' ||
+        s.session?.toLowerCase().includes('race')
+      )
+      if (raceSession?.startTime) {
+        raceStart = raceSession.startTime
+        console.log(`[f1] Extracted race start from schedule: ${raceStart}`)
+      }
+    }
+
     // ── 6. Build response ─────────────────────────────────────────────────────
     const data = {
       series:     'f1',
