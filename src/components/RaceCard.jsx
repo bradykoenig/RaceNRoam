@@ -46,7 +46,7 @@ export default function RaceCard({ race, series, showCountdown = true }) {
             <>
               <div className="race-card-divider" />
               <div className="race-card-stat">
-                <span className="race-card-stat-val text-sm">{formatDate(race.raceStart || race.date)}</span>
+                <span className="race-card-stat-val">{formatDate(race.raceStart || race.date)}</span>
                 <span className="race-card-stat-lbl">Race Start</span>
               </div>
             </>
