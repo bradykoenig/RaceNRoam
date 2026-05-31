@@ -3,6 +3,7 @@ import { buildOpenF1Snapshot, normalizeWeather } from '../../_lib/providers/f1/o
 import {
   getNextRace, getDriverStandings, getConstructorStandings, getCurrentSeasonSchedule,
 } from '../../_lib/providers/f1/jolpicaProvider.js'
+import { getErgastNextRace, getErgastStandings, getErgastConstructorStandings } from '../../_lib/providers/f1/ergastProvider.js'
 import { getFallbackF1Data } from '../../_lib/providers/f1/f1FallbackProvider.js'
 import { getCurrentWeather }  from '../../_lib/providers/weather/openMeteoProvider.js'
 import { getFallbackWeather } from '../../_lib/providers/weather/weatherFallbackProvider.js'
@@ -30,12 +31,20 @@ export async function onRequestGet({ env }) {
       buildOpenF1Snapshot(),
     ])
 
-    const race     = nextRace.status === 'fulfilled' ? nextRace.value : null
-    const drivers  = driverStandings.status === 'fulfilled' ? driverStandings.value : []
-    const teams    = constructorStandings.status === 'fulfilled' ? constructorStandings.value : []
-    const of1      = openF1.status === 'fulfilled' ? openF1.value : null
+    let race     = nextRace.status === 'fulfilled' ? nextRace.value : null
+    let drivers  = driverStandings.status === 'fulfilled' ? driverStandings.value : []
+    let teams    = constructorStandings.status === 'fulfilled' ? constructorStandings.value : []
+    const of1    = openF1.status === 'fulfilled' ? openF1.value : null
 
-    if (!race && !drivers.length) throw new Error('No usable Jolpica data')
+    // Fallback to Ergast if Jolpica fails
+    if (!race || !drivers.length || !teams.length) {
+      console.log('Falling back to Ergast API...')
+      if (!race) race = await getErgastNextRace()
+      if (!drivers.length) drivers = await getErgastStandings()
+      if (!teams.length) teams = await getErgastConstructorStandings()
+    }
+
+    if (!race && !drivers.length) throw new Error('All F1 data sources failed')
 
     // Get weather for the circuit if we have coordinates
     let weather = null
