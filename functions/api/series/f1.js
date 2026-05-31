@@ -4,6 +4,7 @@ import {
   getNextRace, getDriverStandings, getConstructorStandings, getCurrentSeasonSchedule,
 } from '../../_lib/providers/f1/jolpicaProvider.js'
 import { getErgastNextRace, getErgastStandings, getErgastConstructorStandings } from '../../_lib/providers/f1/ergastProvider.js'
+import { getF1ApiNextRace, getF1CurrentSeason } from '../../_lib/providers/f1/f1ApiProvider.js'
 import { getFallbackF1Data } from '../../_lib/providers/f1/f1FallbackProvider.js'
 import { getCurrentWeather }  from '../../_lib/providers/weather/openMeteoProvider.js'
 import { getFallbackWeather } from '../../_lib/providers/weather/weatherFallbackProvider.js'
@@ -42,6 +43,12 @@ export async function onRequestGet({ env }) {
       if (!race) race = await getErgastNextRace()
       if (!drivers.length) drivers = await getErgastStandings()
       if (!teams.length) teams = await getErgastConstructorStandings()
+    }
+
+    // Fallback to F1ApiProvider (hardcoded current season) if needed
+    if (!race) {
+      console.log('Falling back to hardcoded F1 current season...')
+      race = getF1CurrentSeason()
     }
 
     if (!race && !drivers.length) throw new Error('All F1 data sources failed')
