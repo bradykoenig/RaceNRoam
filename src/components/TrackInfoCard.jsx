@@ -15,7 +15,9 @@ export default function TrackInfoCard({ track }) {
         <div className="text-sm font-bold" style={{ color: 'var(--text-primary)', marginBottom: 'var(--sp-1)' }}>
           {track.name}
         </div>
-        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{track.location}</div>
+        {track.location && track.location !== 'TBD' && (
+          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{track.location}</div>
+        )}
       </div>
       <div className="track-stats">
         {stats.slice(0, 6).map(s => (
