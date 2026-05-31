@@ -36,11 +36,11 @@ export default function RaceCard({ race, series, showCountdown = true }) {
               <span className="race-card-stat-lbl">Round</span>
             </div>
           )}
-          {race.date && (
+          {(race.raceStart || race.date) && (
             <>
               <div className="race-card-divider" />
               <div className="race-card-stat">
-                <span className="race-card-stat-val text-sm">{formatDate(race.date)}</span>
+                <span className="race-card-stat-val text-sm">{formatDate(race.raceStart || race.date)}</span>
                 <span className="race-card-stat-lbl">Race Start</span>
               </div>
             </>

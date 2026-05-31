@@ -1,26 +1,107 @@
-// F1 series endpoint
-// Schedule/next race: ESPN API (reliable, no rate limits, always correct, auto-updates every year)
-// Live timing:        OpenF1 (official F1 timing data during sessions)
-// Standings:          Jolpica → ESPN fallback
+/**
+ * GET /api/series/f1
+ *
+ * Source priority (per spec):
+ *  1. Jolpica /next  → authoritative race calendar: name, circuit, official race date/time,
+ *                       FP1/FP2/FP3/Qualifying/Sprint session dates
+ *  2. OpenF1 /sessions → session schedule enrichment (more precise times, sprint quali, etc.)
+ *                        NEVER use the first session as the race date.
+ *  3. ESPN             → fallback for race name / enrichment only, never for race date
+ *
+ * raceStart  = Jolpica race.date (Sunday race)  — used for "Countdown to Race"
+ * nextSession = first future session              — used for "Countdown to Next Session"
+ */
 
 import { buildLiveResponse, buildFallbackResponse, corsOptionsResponse } from '../../_lib/utils/apiResponse.js'
-import { buildOpenF1Snapshot, normalizeWeather, getAllSessionsForMeeting, getLatestMeeting, getSessionWeather } from '../../_lib/providers/f1/openF1Provider.js'
-import { getDriverStandings, getConstructorStandings } from '../../_lib/providers/f1/jolpicaProvider.js'
+import { getAllSessionsForMeeting, getLatestMeeting, getSessionWeather, normalizeWeather } from '../../_lib/providers/f1/openF1Provider.js'
+import { getNextRace, getDriverStandings, getConstructorStandings } from '../../_lib/providers/f1/jolpicaProvider.js'
 import { getScoreboard, extractNextEvent, normalizeEvent } from '../../_lib/providers/espn/espnProvider.js'
 import { getFallbackF1Data } from '../../_lib/providers/f1/f1FallbackProvider.js'
 import { getCurrentWeather } from '../../_lib/providers/weather/openMeteoProvider.js'
 import { getFallbackWeather } from '../../_lib/providers/weather/weatherFallbackProvider.js'
 import { cacheGet, cacheSet, getCacheTtl } from '../../_lib/utils/cache.js'
 
+const CURRENT_YEAR = new Date().getFullYear()
+
+// ── Validation helpers ────────────────────────────────────────────────────────
+
+function isCurrentYear(dateStr) {
+  if (!dateStr) return false
+  const y = new Date(dateStr).getFullYear()
+  return y === CURRENT_YEAR || y === CURRENT_YEAR + 1
+}
+
 function isValidStandings(drivers) {
   if (!drivers?.length) return false
-  const oldTeams = ['Team Lotus', 'BRM', 'March', 'Tyrrell', 'Brabham', 'Matra', 'Surtees']
-  return !oldTeams.some(t => drivers[0]?.team?.includes(t))
+  const historical = ['Team Lotus', 'BRM', 'March', 'Tyrrell', 'Brabham', 'Matra', 'Surtees']
+  return !historical.some(t => drivers[0]?.team?.includes(t))
 }
+
+// ── Build session schedule array (sorted, typed) ──────────────────────────────
+
+/**
+ * Build a normalized session schedule from OpenF1 sessions.
+ * Sorts by date, never assumes first = Race.
+ * Returns { schedule, raceSession, nextSession }
+ */
+function parseOpenF1Sessions(sessions) {
+  const sorted = [...sessions].sort((a, b) =>
+    new Date(a.date_start) - new Date(b.date_start)
+  )
+
+  const now = new Date()
+
+  const schedule = sorted.map(s => {
+    const end    = new Date(s.date_end)
+    const start  = new Date(s.date_start)
+    return {
+      session:   s.session_name || s.session_type || 'Session',
+      startTime: s.date_start,
+      endTime:   s.date_end,
+      status:    end < now ? 'Completed' : start <= now ? 'Live' : 'Upcoming',
+    }
+  })
+
+  // Authoritative race session — must explicitly be named/typed "Race"
+  const raceSession = sorted.find(s =>
+    s.session_name?.toLowerCase() === 'race' ||
+    s.session_type?.toLowerCase() === 'race'
+  ) ?? null
+
+  // Next upcoming session (any type)
+  const nextSession = sorted.find(s => new Date(s.date_end) > now) ?? null
+
+  return { schedule, raceSession, nextSession }
+}
+
+/**
+ * Build session schedule from Jolpica sessions object.
+ * Jolpica directly gives us race + each practice + qualifying as named keys.
+ */
+function jolpicaSchedule(race) {
+  const s = race.sessions || {}
+  const entries = [
+    s.fp1        && { session: 'Practice 1',  startTime: s.fp1 },
+    s.fp2        && { session: 'Practice 2',  startTime: s.fp2 },
+    s.fp3        && { session: 'Practice 3',  startTime: s.fp3 },
+    s.sprint_qualifying && { session: 'Sprint Qualifying', startTime: s.sprint_qualifying },
+    s.sprint     && { session: 'Sprint Race', startTime: s.sprint },
+    s.qualifying && { session: 'Qualifying',  startTime: s.qualifying },
+    race.date    && { session: 'Race',         startTime: race.date },
+  ].filter(Boolean)
+
+  const now = new Date()
+  return entries.map(e => ({
+    ...e,
+    status: new Date(e.startTime) < now ? 'Completed' : 'Upcoming',
+  }))
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function onRequestGet({ env }) {
   const cacheKey = 'series:f1'
-  const cached = await cacheGet(env, cacheKey)
+  const cached   = await cacheGet(env, cacheKey)
   if (cached) {
     return buildLiveResponse({ ...cached.data, _cacheHit: true }, 'f1', cached.source, 'standings')
   }
@@ -30,162 +111,196 @@ export async function onRequestGet({ env }) {
     return buildFallbackResponse(getFallbackF1Data(), 'f1', 'Live F1 disabled')
   }
 
-  const year = new Date().getFullYear()
   const fb = getFallbackF1Data()
 
   try {
-    // ── Step 1: ESPN for next race schedule (reliable, no rate limits, always current) ──
-    let race = null
-    let schedule = []
-    let espnSource = false
+    // ── 1. Jolpica /next — authoritative race date and session times ─────────
+    let jolpicaRace  = null
+    let raceStart    = null   // official Sunday race date/time
+    let schedule     = []
+    let nextSession  = null   // first upcoming session of any type
 
     try {
-      const scoreboard = await getScoreboard('f1')
-      const event = extractNextEvent(scoreboard)
-      if (event) {
-        const normalized = normalizeEvent(event, 'f1')
-        if (normalized) {
-          race = {
-            round:    normalized.round,
-            name:     normalized.name,
-            circuit:  normalized.track,
-            location: normalized.location,
-            country:  normalized.country,
-            date:     normalized.date,
-            lat:      null,
-            lon:      null,
-            sessions: {},
-          }
-          schedule = [{ session: 'Race', startTime: normalized.date, status: normalized.status }]
-          espnSource = true
-          console.log(`ESPN F1 next race: ${race.name} on ${race.date}`)
-        }
+      jolpicaRace = await getNextRace()
+      if (jolpicaRace && isCurrentYear(jolpicaRace.date)) {
+        raceStart = jolpicaRace.date              // e.g. "2026-06-07T13:00:00Z" — always the race
+        schedule  = jolpicaSchedule(jolpicaRace)  // FP1…Quali…Race in date order
+
+        const now = new Date()
+        nextSession = schedule.find(s => new Date(s.startTime) > now) ?? null
+
+        console.log(`[f1] Jolpica next race: ${jolpicaRace.name} race on ${raceStart}`)
+      } else {
+        console.warn(`[f1] Jolpica returned invalid year data (${jolpicaRace?.date}) — skipping`)
+        jolpicaRace = null
       }
     } catch (err) {
-      console.error('ESPN F1 error:', err.message)
+      console.error('[f1] Jolpica /next error:', err.message)
     }
 
-    // ── Step 2: OpenF1 for full session schedule + circuit info + correct race date ──
-    let of1Snapshot = null
+    // ── 2. OpenF1 /sessions — enrich schedule if Jolpica worked, or replace it ─
+    let of1Weather  = null
+    let of1Circuit  = null
+    let of1Country  = null
+    let of1Location = null
+
     try {
       const meeting = await getLatestMeeting()
       if (meeting) {
-        const meetingSessions = await getAllSessionsForMeeting(meeting.meeting_key)
-        if (meetingSessions.length > 0) {
-          // Build full session schedule from OpenF1 (FP1, FP2, FP3, Quali, Race)
-          const of1Schedule = meetingSessions.map(s => ({
-            session:   s.session_name || s.session_type || 'Session',
-            startTime: s.date_start,
-            endTime:   s.date_end,
-            status:    new Date(s.date_end) < new Date() ? 'Completed' : 'Upcoming',
-          }))
-          if (of1Schedule.length > 0) schedule = of1Schedule
+        const sessions = await getAllSessionsForMeeting(meeting.meeting_key)
+        if (sessions.length > 0) {
+          const parsed = parseOpenF1Sessions(sessions)
 
-          // Find the actual RACE session for the correct date
-          const raceSession = meetingSessions.find(s =>
-            s.session_name?.toLowerCase() === 'race' ||
-            s.session_type?.toLowerCase() === 'race'
-          )
+          // Enrich circuit info from OpenF1
+          of1Circuit  = sessions[0]?.circuit_short_name || meeting.circuit_short_name || null
+          of1Country  = meeting.country_name || null
+          of1Location = meeting.location || null
 
-          // Always update race date to the actual race session date (not FP1)
-          if (race && raceSession?.date_start) {
-            race.date = raceSession.date_start
-          }
+          if (jolpicaRace) {
+            // Jolpica already gave us the race date — use OpenF1 only to:
+            // a) get more precise session times if available
+            // b) add Sprint Qualifying if present
+            // c) confirm raceSession exists
+            if (parsed.raceSession && isCurrentYear(parsed.raceSession.date_start)) {
+              // Use OpenF1 race session time only if it's on the same day as Jolpica's race date
+              const of1RaceDay   = new Date(parsed.raceSession.date_start).toDateString()
+              const jolRaceDay   = new Date(raceStart).toDateString()
+              if (of1RaceDay === jolRaceDay) {
+                raceStart = parsed.raceSession.date_start  // more precise time from OpenF1
+              }
+            }
 
-          // Fill in circuit info from OpenF1 (more reliable than ESPN for F1)
-          if (race) {
-            race.circuit  = meetingSessions[0]?.circuit_short_name || meeting.circuit_short_name || race.circuit || meeting.location || ''
-            race.location = meeting.location || race.location || ''
-            race.country  = meeting.country_name || race.country || ''
-          }
+            // Prefer OpenF1 schedule if it has more sessions (e.g. Sprint Quali)
+            if (parsed.schedule.length > schedule.length) {
+              // Keep Jolpica race date but use OpenF1 session times
+              schedule = parsed.schedule
+            }
 
-          // If ESPN failed, use OpenF1 for everything
-          if (!race) {
-            race = {
-              round:   meeting.meeting_key,
-              name:    (meeting.meeting_official_name || meeting.meeting_name || 'F1 Race')
-                         .replace(/^Formula 1\s+/i, '').replace(/\s+\d{4}$/, '').trim(),
-              circuit: meetingSessions[0]?.circuit_short_name || meeting.circuit_short_name || meeting.location || '',
-              location: meeting.location || '',
-              country:  meeting.country_name || '',
-              date:     raceSession?.date_start || meeting.date_start,
-              lat: null, lon: null, sessions: {},
+            // Update nextSession from OpenF1's perspective
+            const now = new Date()
+            nextSession = parsed.schedule.find(s => new Date(s.startTime) > now) ?? nextSession
+          } else {
+            // Jolpica failed — use OpenF1 entirely, but still find race session correctly
+            if (parsed.raceSession && isCurrentYear(parsed.raceSession.date_start)) {
+              raceStart   = parsed.raceSession.date_start
+              schedule    = parsed.schedule
+              nextSession = parsed.nextSession
+              console.log(`[f1] OpenF1 fallback race session: ${raceStart}`)
+            } else {
+              console.warn('[f1] OpenF1 has no valid race session for current year')
             }
           }
 
-          // Get weather from latest session
-          const latestSession = meetingSessions[meetingSessions.length - 1]
-          const rawWeather = await getSessionWeather(latestSession.session_key).catch(() => null)
-          of1Snapshot = { weather: rawWeather }
+          // Get weather from most recent session
+          const latestSess = sessions.at(-1)
+          if (latestSess?.session_key) {
+            const raw = await getSessionWeather(latestSess.session_key).catch(() => null)
+            of1Weather = normalizeWeather(raw)
+          }
         }
       }
     } catch (err) {
-      console.error('OpenF1 session error:', err.message)
+      console.error('[f1] OpenF1 sessions error:', err.message)
     }
 
-    // ── Step 3: Standings (Jolpica → fallback) ──
+    // ── 3. ESPN — fallback for race name/location only ────────────────────────
+    let raceName    = jolpicaRace?.name    || null
+    let raceCircuit = jolpicaRace?.circuit || of1Circuit || null
+    let raceLocation= jolpicaRace?.location|| of1Location || null
+    let raceCountry = jolpicaRace?.country || of1Country  || null
+    let raceLat     = jolpicaRace?.lat     || null
+    let raceLon     = jolpicaRace?.lon     || null
+    let raceRound   = jolpicaRace?.round   || null
+
+    if (!raceName) {
+      try {
+        const scoreboard = await getScoreboard('f1')
+        const event      = extractNextEvent(scoreboard)
+        const normalized = normalizeEvent(event, 'f1')
+        if (normalized?.name) {
+          raceName     = normalized.name
+          raceCircuit  = raceCircuit  || normalized.track
+          raceLocation = raceLocation || normalized.location
+          raceCountry  = raceCountry  || normalized.country
+          console.log(`[f1] ESPN race name fallback: ${raceName}`)
+          // NOTE: we do NOT use normalized.date for raceStart — ESPN may return FP1 date
+        }
+      } catch (err) {
+        console.error('[f1] ESPN error:', err.message)
+      }
+    }
+
+    // ── Bail out if we have no race at all ────────────────────────────────────
+    if (!raceStart && !raceName) {
+      console.warn('[f1] No race data from any source — using fallback')
+      return buildFallbackResponse(fb, 'f1', 'No F1 data from Jolpica, OpenF1, or ESPN')
+    }
+
+    // Use fallback schedule if we still have nothing
+    if (!schedule.length) schedule = fb.schedule
+
+    // ── 4. Standings ──────────────────────────────────────────────────────────
     let drivers = []
-    let teams = []
-    const [jolpicaDrivers, jolpicaTeams] = await Promise.allSettled([
+    let teams   = []
+    const [driversRes, teamsRes] = await Promise.allSettled([
       getDriverStandings(),
       getConstructorStandings(),
     ])
-    drivers = jolpicaDrivers.status === 'fulfilled' ? jolpicaDrivers.value : []
-    teams   = jolpicaTeams.status === 'fulfilled' ? jolpicaTeams.value : []
+    drivers = driversRes.status === 'fulfilled' ? driversRes.value : []
+    teams   = teamsRes.status   === 'fulfilled' ? teamsRes.value   : []
 
     if (!isValidStandings(drivers)) {
       drivers = fb.standings.drivers
       teams   = fb.standings.teams
     }
 
-    // ── Step 4: Weather ──
-    let weather = of1Snapshot?.weather ? normalizeWeather(of1Snapshot.weather) : null
-    if (!weather && race?.lat && race?.lon) {
-      weather = await getCurrentWeather({ lat: race.lat, lon: race.lon }).catch(() => null)
+    // ── 5. Weather ────────────────────────────────────────────────────────────
+    let weather = of1Weather
+    if (!weather && raceLat && raceLon) {
+      weather = await getCurrentWeather({ lat: raceLat, lon: raceLon }).catch(() => null)
     }
-    if (!weather) weather = getFallbackWeather(race?.circuit || '')
+    if (!weather) weather = getFallbackWeather(raceCircuit || '')
 
-    if (!race) {
-      return buildFallbackResponse(fb, 'f1', 'No F1 data from ESPN or OpenF1')
-    }
-
+    // ── 6. Build response ─────────────────────────────────────────────────────
     const data = {
-      series: 'f1',
+      series:     'f1',
       seriesName: 'Formula 1',
       featuredRace: {
-        id:       `f1-${(race.circuit || 'race').toLowerCase().replace(/\s+/g, '-')}-${year}`,
-        name:     race.name,
-        track:    race.circuit,
-        location: race.location,
-        country:  race.country,
-        date:     race.date,
-        status:   'Upcoming',
-        round:    race.round,
-        season:   year,
+        id:           `f1-${(raceCircuit || 'race').toLowerCase().replace(/\s+/g, '-')}-${CURRENT_YEAR}`,
+        name:         raceName || 'F1 Grand Prix',
+        track:        raceCircuit  || '',
+        location:     raceLocation || '',
+        country:      raceCountry  || '',
+        date:         raceStart,      // ← always the Sunday race date
+        raceStart,                    // explicit alias used by countdown
+        nextSession,                  // first upcoming session (FP1 if pre-weekend, or Race if race weekend)
+        status:       'Upcoming',
+        round:        raceRound,
+        season:       CURRENT_YEAR,
       },
       track: {
-        name:     race.circuit,
-        location: race.location,
-        lat:      race.lat,
-        lon:      race.lon,
+        name:     raceCircuit  || '',
+        location: raceLocation || '',
+        lat:      raceLat,
+        lon:      raceLon,
         type:     'Grand Prix Circuit',
       },
-      schedule:  schedule.length ? schedule : fb.schedule,
+      schedule,    // all sessions sorted by date with correct types
       standings: {
         drivers: isValidStandings(drivers) ? drivers : fb.standings.drivers,
         teams:   teams.length ? teams : fb.standings.teams,
       },
-      weather:       weather || fb.weather,
+      weather:       weather       || fb.weather,
       talkingPoints: fb.talkingPoints,
       officialLinks: fb.officialLinks,
     }
 
-    const sources = [espnSource ? 'espn' : 'openf1', of1Snapshot ? 'openf1' : null].filter(Boolean).join('+')
+    const sources = [jolpicaRace ? 'jolpica' : null, 'openf1'].filter(Boolean).join('+')
     await cacheSet(env, cacheKey, { data, source: sources }, getCacheTtl(env, 'standings'))
     return buildLiveResponse(data, 'f1', sources, 'standings')
 
   } catch (err) {
-    console.error('F1 endpoint error:', err)
+    console.error('[f1] Unhandled error:', err)
     return buildFallbackResponse(fb, 'f1', `F1 fetch failed: ${err.message}`)
   }
 }

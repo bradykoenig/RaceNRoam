@@ -61,20 +61,55 @@ export default function SeriesPage({ series, data, loading, error, onRefresh }) 
         <section className="section">
           <p className="section-title">Next Race</p>
           <div className="grid-2">
-            <RaceCard race={race} series={series} showCountdown={false} />
+            {/* Race card always shows Sunday race date */}
+            <RaceCard race={{ ...race, date: race.raceStart || race.date }} series={series} showCountdown={false} />
             <div className="card">
-              <div className="card-header"><h4>Countdown to Race</h4></div>
-              <div className="card-body flex-center" style={{ padding: 'var(--sp-8)', flexDirection: 'column', gap: 'var(--sp-4)' }}>
-                <Countdown targetDate={race.date} size="large" />
-                {race.date && (
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: 'var(--sp-3)' }}>
-                    {new Intl.DateTimeFormat('en-US', {
-                      weekday: 'long', month: 'long', day: 'numeric',
-                      hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
-                    }).format(new Date(race.date))}
-                  </p>
-                )}
-              </div>
+              {/* If next session is before the race, show both countdowns */}
+              {race.nextSession && race.nextSession.session !== 'Race' ? (
+                <>
+                  <div className="card-header">
+                    <h4>Countdown to Next Session</h4>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {race.nextSession.session}
+                    </span>
+                  </div>
+                  <div className="card-body flex-center" style={{ padding: 'var(--sp-6)', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+                    <Countdown targetDate={race.nextSession.startTime} size="large" />
+                    {race.nextSession.startTime && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                        {new Intl.DateTimeFormat('en-US', {
+                          weekday: 'long', month: 'long', day: 'numeric',
+                          hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+                        }).format(new Date(race.nextSession.startTime))}
+                      </p>
+                    )}
+                    {/* Sub-countdown to race */}
+                    {(race.raceStart || race.date) && (
+                      <div style={{ marginTop: 'var(--sp-3)', borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-3)', width: '100%', textAlign: 'center' }}>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 'var(--sp-2)' }}>
+                          Countdown to Race
+                        </p>
+                        <Countdown targetDate={race.raceStart || race.date} size="inline" />
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="card-header"><h4>Countdown to Race</h4></div>
+                  <div className="card-body flex-center" style={{ padding: 'var(--sp-8)', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+                    <Countdown targetDate={race.raceStart || race.date} size="large" />
+                    {(race.raceStart || race.date) && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: 'var(--sp-3)' }}>
+                        {new Intl.DateTimeFormat('en-US', {
+                          weekday: 'long', month: 'long', day: 'numeric',
+                          hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+                        }).format(new Date(race.raceStart || race.date))}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </section>
