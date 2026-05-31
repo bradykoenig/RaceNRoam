@@ -259,12 +259,10 @@ function LiveStreamBody({ liveData, series, meta }) {
 }
 
 // ── Idle / Pre-race Layout ────────────────────────────────────
-// Shown when no session is active — countdown, standings, talking points
+// Shown when no session is active — countdown, schedule
 
 function IdleStreamBody({ d, meta, series }) {
   const race     = d.featuredRace
-  const standings = d.standings?.drivers || []
-  const points   = d.talkingPoints || []
   const weather  = d.weather
   const schedule = d.schedule || []
 
@@ -299,42 +297,20 @@ function IdleStreamBody({ d, meta, series }) {
         )}
       </div>
 
-      {/* Standings + Schedule/Talking points */}
-      <div className="stream-panels">
-        <div className="stream-panel">
-          <div className="stream-panel-hdr">Championship Standings</div>
-          {standings.slice(0, 8).map((dr, i) => (
-            <div key={i} className="stream-standing-row">
-              <span className="stream-standing-pos">{dr.pos || i + 1}</span>
-              <span className="stream-standing-name">{dr.driver}</span>
-              <span className="stream-standing-pts">{dr.pts} pts</span>
-            </div>
-          ))}
-          {!standings.length && <div style={{ color:'#333', fontSize:'0.78rem' }}>Loading…</div>}
+      {/* Weekend Schedule */}
+      {schedule.length > 0 && (
+        <div className="stream-panels">
+          <div className="stream-panel">
+            <div className="stream-panel-hdr">Weekend Schedule</div>
+            {schedule.slice(0, 5).map((s, i) => (
+              <div key={i} className="stream-tp">
+                <span style={{ fontWeight:700, color:meta.color, marginRight:8 }}>{s.session}</span>
+                {s.startTime ? fmt(s.startTime) : ''}
+              </div>
+            ))}
+          </div>
         </div>
-
-        <div className="stream-panel">
-          {schedule.length > 0 && (
-            <>
-              <div className="stream-panel-hdr">Weekend Schedule</div>
-              {schedule.slice(0, 3).map((s, i) => (
-                <div key={i} className="stream-tp">
-                  <span style={{ fontWeight:700, color:meta.color, marginRight:8 }}>{s.session}</span>
-                  {s.startTime ? fmt(s.startTime) : ''}
-                </div>
-              ))}
-              <div style={{ height:12 }} />
-            </>
-          )}
-          <div className="stream-panel-hdr">Talking Points</div>
-          {points.slice(0, 3).map((pt, i) => (
-            <div key={i} className="stream-tp">
-              <span className="stream-tp-num">{i + 1}.</span>{pt}
-            </div>
-          ))}
-          {!points.length && <div style={{ color:'#333', fontSize:'0.78rem' }}>Loading…</div>}
-        </div>
-      </div>
+      )}
     </div>
   )
 }
