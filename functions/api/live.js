@@ -31,42 +31,42 @@ export async function onRequestGet({ request, env }) {
 
   // ── F1 via OpenF1 ─────────────────────────────────────────
   if (series === 'f1') {
-    const cached = await cacheGet(env, cacheKey)
-    if (cached) return json({ ok: true, series: 'f1', _cacheHit: true, ...cached })
+    // Try KV cache first
+    const kvCached = await cacheGet(env, cacheKey)
+    if (kvCached) return json({ ok: true, series: 'f1', _cacheHit: true, ...kvCached })
 
     try {
       const data = await getF1LiveData()
 
       if (data.isLive && data.session?.key) {
-        try {
-          data.locations = await getF1Locations(data.session.key)
-        } catch {
-          data.locations = []
-        }
+        try { data.locations = await getF1Locations(data.session.key) }
+        catch { data.locations = [] }
       }
 
-      await cacheSet(env, cacheKey, data, getCacheTtl(env, 'live'))
-      return json({ ok: true, series: 'f1', ...data })
+      // Cache in KV for 20 seconds
+      await cacheSet(env, cacheKey, data, 20)
+      return json({ ok: true, series: 'f1', ...data }, 20)
     } catch (err) {
-      const cached = await cacheGet(env, cacheKey)
-      if (cached) return json({ ok: true, series: 'f1', _cacheFallback: true, ...cached })
-      return json({ ok: false, series: 'f1', isLive: false, error: err.message })
+      // On any error (including rate limit), serve stale KV cache
+      const stale = await cacheGet(env, cacheKey)
+      if (stale) return json({ ok: true, series: 'f1', _stale: true, ...stale }, 5)
+      return json({ ok: false, series: 'f1', isLive: false, error: err.message }, 5)
     }
   }
 
   // ── NASCAR via NASCAR.com public feed ─────────────────────
   if (series === 'nascar') {
-    const cached = await cacheGet(env, cacheKey)
-    if (cached) return json({ ok: true, series: 'nascar', _cacheHit: true, ...cached })
+    const kvCached = await cacheGet(env, cacheKey)
+    if (kvCached) return json({ ok: true, series: 'nascar', _cacheHit: true, ...kvCached })
 
     try {
       const data = await getNascarLiveData()
-      await cacheSet(env, cacheKey, data, getCacheTtl(env, 'live'))
-      return json({ ok: true, series: 'nascar', ...data })
+      await cacheSet(env, cacheKey, data, 20)
+      return json({ ok: true, series: 'nascar', ...data }, 20)
     } catch (err) {
-      const cached = await cacheGet(env, cacheKey)
-      if (cached) return json({ ok: true, series: 'nascar', _cacheFallback: true, ...cached })
-      return json({ ok: false, series: 'nascar', isLive: false, error: err.message })
+      const stale = await cacheGet(env, cacheKey)
+      if (stale) return json({ ok: true, series: 'nascar', _stale: true, ...stale }, 5)
+      return json({ ok: false, series: 'nascar', isLive: false, error: err.message }, 5)
     }
   }
 

@@ -1,119 +1,160 @@
 import { buildLiveResponse, buildFallbackResponse, corsOptionsResponse } from '../../_lib/utils/apiResponse.js'
-import { buildOpenF1Snapshot, normalizeWeather } from '../../_lib/providers/f1/openF1Provider.js'
-import {
-  getNextRace, getDriverStandings, getConstructorStandings, getCurrentSeasonSchedule,
-} from '../../_lib/providers/f1/jolpicaProvider.js'
-import { getErgastNextRace, getErgastStandings, getErgastConstructorStandings } from '../../_lib/providers/f1/ergastProvider.js'
-import { getF1ApiNextRace, getF1CurrentSeason } from '../../_lib/providers/f1/f1ApiProvider.js'
+import { buildOpenF1Snapshot, normalizeWeather, getLatestMeeting } from '../../_lib/providers/f1/openF1Provider.js'
+import { getDriverStandings, getConstructorStandings } from '../../_lib/providers/f1/jolpicaProvider.js'
+import { getErgastStandings, getErgastConstructorStandings, getErgastNextRace } from '../../_lib/providers/f1/ergastProvider.js'
 import { getFallbackF1Data } from '../../_lib/providers/f1/f1FallbackProvider.js'
-import { getCurrentWeather }  from '../../_lib/providers/weather/openMeteoProvider.js'
+import { getCurrentWeather } from '../../_lib/providers/weather/openMeteoProvider.js'
 import { getFallbackWeather } from '../../_lib/providers/weather/weatherFallbackProvider.js'
 import { cacheGet, cacheSet, getCacheTtl } from '../../_lib/utils/cache.js'
 
 export async function onRequestGet({ env }) {
   const cacheKey = 'series:f1'
-  const cached   = await cacheGet(env, cacheKey)
+  const cached = await cacheGet(env, cacheKey)
   if (cached) {
     return buildLiveResponse({ ...cached.data, _cacheHit: true }, 'f1', cached.source, 'standings')
   }
 
   const liveEnabled = env?.ENABLE_LIVE_F1 !== 'false'
-
   if (!liveEnabled) {
     return buildFallbackResponse(getFallbackF1Data(), 'f1', 'Live F1 disabled via ENABLE_LIVE_F1=false')
   }
 
+  const currentYear = new Date().getFullYear()
+
   try {
-    // Fetch Jolpica data + OpenF1 in parallel
-    const [nextRace, driverStandings, constructorStandings, openF1] = await Promise.allSettled([
-      getNextRace(),
-      getDriverStandings(),
-      getConstructorStandings(),
-      buildOpenF1Snapshot(),
-    ])
+    // Step 1: Get next race from OpenF1 (most reliable for current season)
+    let race = null
+    let raceSource = null
 
-    let race     = nextRace.status === 'fulfilled' ? nextRace.value : null
-    let drivers  = driverStandings.status === 'fulfilled' ? driverStandings.value : []
-    let teams    = constructorStandings.status === 'fulfilled' ? constructorStandings.value : []
-    const of1    = openF1.status === 'fulfilled' ? openF1.value : null
+    try {
+      const meeting = await getLatestMeeting()
+      if (meeting) {
+        // Find the NEXT upcoming meeting, not just closest
+        const now = new Date()
+        const meetingDate = new Date(meeting.date_start)
 
-    // Validate Jolpica data is from current season
-    const currentYear = new Date().getFullYear()
-    const raceYear = race?.date ? new Date(race.date).getFullYear() : null
-    const isOldData = raceYear && raceYear < currentYear - 1
+        // If meeting is in the past by more than 3 days, get the next one
+        const daysDiff = (now - meetingDate) / (1000 * 60 * 60 * 24)
 
-    if (isOldData) {
-      console.log(`Jolpica returned old data (${raceYear}), skipping...`)
-      race = null
+        if (daysDiff < 3) {
+          race = {
+            round: meeting.meeting_key,
+            name: meeting.meeting_name?.replace('Formula 1 ', '').replace(` ${currentYear}`, '') || meeting.meeting_official_name || 'F1 Race',
+            circuit: meeting.circuit_short_name || meeting.location || '',
+            location: meeting.location || '',
+            country: meeting.country_name || '',
+            date: meeting.date_start,
+            lat: null,
+            lon: null,
+            sessions: {},
+          }
+          raceSource = 'openf1'
+          console.log('Using OpenF1 meeting:', race.name)
+        }
+      }
+    } catch (err) {
+      console.log('OpenF1 meetings error:', err.message)
     }
 
-    // Fallback to Ergast if Jolpica fails or has old data
-    if (!race || !drivers.length || !teams.length) {
-      console.log('Falling back to Ergast API...')
-      if (!race) race = await getErgastNextRace()
-      if (!drivers.length) drivers = await getErgastStandings()
-      if (!teams.length) teams = await getErgastConstructorStandings()
-    }
-
-    // Fallback to F1ApiProvider (hardcoded current season) if needed
+    // Step 2: If OpenF1 didn't give us a valid upcoming race, try Ergast
     if (!race) {
-      console.log('Falling back to hardcoded F1 current season...')
-      race = getF1CurrentSeason()
-    }
-
-    if (!race && !drivers.length) throw new Error('All F1 data sources failed')
-
-    // Get weather for the circuit if we have coordinates
-    let weather = null
-    if (race?.lat && race?.lon) {
       try {
-        weather = of1?.weather
-          ? normalizeWeather(of1.weather)
-          : await getCurrentWeather({ lat: race.lat, lon: race.lon })
-      } catch {
-        weather = getFallbackWeather(race.circuit || '')
+        const ergastRace = await getErgastNextRace()
+        if (ergastRace && new Date(ergastRace.date).getFullYear() === currentYear) {
+          race = ergastRace
+          raceSource = 'ergast'
+          console.log('Using Ergast race:', race.name)
+        }
+      } catch (err) {
+        console.log('Ergast error:', err.message)
       }
     }
 
-    // Build schedule from sessions
-    const schedule = race ? [
-      race.sessions.fp1  && { session: 'Practice 1', startTime: race.sessions.fp1,  status: 'Upcoming' },
-      race.sessions.fp2  && { session: 'Practice 2', startTime: race.sessions.fp2,  status: 'Upcoming' },
-      race.sessions.fp3  && { session: 'Practice 3', startTime: race.sessions.fp3,  status: 'Upcoming' },
+    // Step 3: Get OpenF1 snapshot for weather + live session data
+    const of1 = await buildOpenF1Snapshot().catch(() => null)
+
+    // Step 4: Get standings (Jolpica first, then Ergast)
+    let drivers = []
+    let teams = []
+
+    const [driverStandings, constructorStandings] = await Promise.allSettled([
+      getDriverStandings(),
+      getConstructorStandings(),
+    ])
+
+    drivers = driverStandings.status === 'fulfilled' ? driverStandings.value : []
+    teams = constructorStandings.status === 'fulfilled' ? constructorStandings.value : []
+
+    // Validate standings aren't from historical season
+    const isOldStandings = drivers.length > 0 && drivers[0]?.team &&
+      ['Team Lotus', 'BRM', 'March', 'Tyrrell', 'Brabham-Ford'].includes(drivers[0].team)
+
+    if (isOldStandings || !drivers.length) {
+      console.log('Jolpica standings appear old, falling back to Ergast...')
+      drivers = await getErgastStandings().catch(() => [])
+      teams = await getErgastConstructorStandings().catch(() => [])
+    }
+
+    // Step 5: Get weather
+    let weather = null
+    if (of1?.weather) {
+      weather = normalizeWeather(of1.weather)
+    } else if (race?.lat && race?.lon) {
+      weather = await getCurrentWeather({ lat: race.lat, lon: race.lon }).catch(() => null)
+    }
+    if (!weather && race?.circuit) {
+      weather = getFallbackWeather(race.circuit)
+    }
+
+    // Step 6: Build schedule from sessions
+    const schedule = race?.sessions ? [
+      race.sessions.fp1 && { session: 'Practice 1', startTime: race.sessions.fp1, status: 'Upcoming' },
+      race.sessions.fp2 && { session: 'Practice 2', startTime: race.sessions.fp2, status: 'Upcoming' },
+      race.sessions.fp3 && { session: 'Practice 3', startTime: race.sessions.fp3, status: 'Upcoming' },
       race.sessions.qualifying && { session: 'Qualifying', startTime: race.sessions.qualifying, status: 'Upcoming' },
-      race.sessions.sprint     && { session: 'Sprint Race', startTime: race.sessions.sprint,    status: 'Upcoming' },
-      { session: 'Race', startTime: race.date, status: 'Upcoming' },
+      race.sessions.sprint && { session: 'Sprint Race', startTime: race.sessions.sprint, status: 'Upcoming' },
+      race.date && { session: 'Race', startTime: race.date, status: 'Upcoming' },
     ].filter(Boolean) : []
 
     const fb = getFallbackF1Data()
+
+    if (!race) {
+      console.log('No race found from any live source, using fallback data')
+      return buildFallbackResponse(fb, 'f1', 'All live APIs returned no valid data')
+    }
+
     const data = {
       series: 'f1',
       seriesName: 'Formula 1',
-      featuredRace: race ? {
-        id:       `f1-${race.circuit?.toLowerCase().replace(/\s+/g,'-') || 'next'}-${new Date().getFullYear()}`,
-        name:     race.name,
-        track:    race.circuit,
-        location: race.location,
-        country:  race.country,
-        date:     race.date,
-        status:   'Upcoming',
-        round:    race.round,
-        season:   new Date().getFullYear(),
-      } : fb.featuredRace,
-      track: race ? {
+      featuredRace: {
+        id: `f1-${race.circuit?.toLowerCase().replace(/\s+/g, '-') || 'next'}-${currentYear}`,
+        name: race.name,
+        track: race.circuit,
+        location: `${race.location}${race.country ? ', ' + race.country : ''}`,
+        country: race.country,
+        date: race.date,
+        status: 'Upcoming',
+        round: race.round,
+        season: currentYear,
+      },
+      track: {
         name: race.circuit,
         location: race.location,
-        lat: race.lat, lon: race.lon,
+        lat: race.lat,
+        lon: race.lon,
         type: 'Grand Prix Circuit',
-      } : fb.track,
-      schedule:   schedule.length  ? schedule  : fb.schedule,
-      standings:  { drivers: drivers.length ? drivers : fb.standings.drivers, teams: teams.length ? teams : fb.standings.teams },
-      weather:    weather || fb.weather,
+      },
+      schedule: schedule.length ? schedule : fb.schedule,
+      standings: {
+        drivers: drivers.length ? drivers : fb.standings.drivers,
+        teams: teams.length ? teams : fb.standings.teams,
+      },
+      weather: weather || fb.weather,
       talkingPoints: fb.talkingPoints,
       officialLinks: fb.officialLinks,
     }
 
-    const sources = ['jolpica', of1 ? 'openf1' : null].filter(Boolean).join('+')
+    const sources = [raceSource, of1 ? 'openf1' : null].filter(Boolean).join('+')
     const result = { data, source: sources }
     await cacheSet(env, cacheKey, result, getCacheTtl(env, 'standings'))
     return buildLiveResponse(data, 'f1', sources, 'standings')
