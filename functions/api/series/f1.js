@@ -15,7 +15,7 @@
 import { buildLiveResponse, buildFallbackResponse, corsOptionsResponse } from '../../_lib/utils/apiResponse.js'
 import { getAllSessionsForMeeting, getLatestMeeting, getSessionWeather, normalizeWeather } from '../../_lib/providers/f1/openF1Provider.js'
 import { getNextRace, getDriverStandings, getConstructorStandings } from '../../_lib/providers/f1/jolpicaProvider.js'
-import { getScoreboard, extractNextEvent, normalizeEvent } from '../../_lib/providers/espn/espnProvider.js'
+import { getScoreboard, extractNextEvent, normalizeEvent, getStandings, normalizeStandingsEntries } from '../../_lib/providers/espn/espnProvider.js'
 import { getFallbackF1Data } from '../../_lib/providers/f1/f1FallbackProvider.js'
 import { getCurrentWeather } from '../../_lib/providers/weather/openMeteoProvider.js'
 import { getFallbackWeather } from '../../_lib/providers/weather/weatherFallbackProvider.js'
@@ -95,6 +95,69 @@ function jolpicaSchedule(race) {
     ...e,
     status: new Date(e.startTime) < now ? 'Completed' : 'Upcoming',
   }))
+}
+
+// ── Race Preview Generator ────────────────────────────────────────────────────
+/**
+ * Generate data-driven race preview from standings and circuit data.
+ * Updates automatically after each race.
+ */
+function generateRacePreview(drivers, teams, raceName, raceCircuit) {
+  if (!drivers?.length || !raceName) return []
+
+  // Classify circuit type based on name
+  const circuitLower = (raceCircuit || '').toLowerCase()
+  const isStreetCircuit = circuitLower.includes('street') || circuitLower.includes('monaco') ||
+                          circuitLower.includes('baku') || circuitLower.includes('singapore') ||
+                          circuitLower.includes('austin') || circuitLower.includes('buenos aires')
+  const isHighSpeed = circuitLower.includes('monza') || circuitLower.includes('spa') ||
+                      circuitLower.includes('silverstone') || circuitLower.includes('silverstones')
+
+  const preview = []
+
+  // 1. Top 3 drivers — who's leading
+  const top3 = drivers.slice(0, 3)
+  if (top3.length > 0) {
+    preview.push({
+      title: 'Championship Leader',
+      content: `${top3[0].driver} (${top3[0].pts} pts) leads ${top3[1]?.driver || 'the field'} by ${Math.round(top3[0].pts - (top3[1]?.pts || 0))} points`,
+    })
+  }
+
+  // 2. Constructor standings
+  if (teams?.length > 0) {
+    const lead = Math.round(teams[0].pts - (teams[1]?.pts || 0))
+    preview.push({
+      title: 'Constructor Battle',
+      content: `${teams[0].team} leads constructor championship by ${lead} points`,
+    })
+  }
+
+  // 3. Circuit characteristics
+  let circuitNote = ''
+  if (isStreetCircuit) {
+    circuitNote = 'Street circuit: precision, low overtaking, close racing, tire degradation critical'
+  } else if (isHighSpeed) {
+    circuitNote = 'High-speed circuit: power matters, slipstream advantage, fuel efficiency important'
+  } else {
+    circuitNote = 'Mixed circuit: balanced challenge for teams and drivers'
+  }
+  preview.push({
+    title: 'Circuit Profile',
+    content: circuitNote,
+  })
+
+  // 4. Midfield battle
+  const midfield = drivers.slice(3, 6)
+  if (midfield.length > 0) {
+    const gaps = midfield.map((d, i) => `${d.driver} (${d.pts}pts)`).join(' vs ')
+    preview.push({
+      title: 'Midfield Watch',
+      content: `Close battle: ${gaps} — points available for those outside the top 2`,
+    })
+  }
+
+  return preview
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -239,7 +302,7 @@ export async function onRequestGet({ env }) {
     // Use fallback schedule if we still have nothing
     if (!schedule.length) schedule = fb.schedule
 
-    // ── 4. Standings ──────────────────────────────────────────────────────────
+    // ── 4. Standings (Jolpica → ESPN → fallback) ───────────────────────────────
     let drivers = []
     let teams   = []
     const [driversRes, teamsRes] = await Promise.allSettled([
@@ -249,7 +312,23 @@ export async function onRequestGet({ env }) {
     drivers = driversRes.status === 'fulfilled' ? driversRes.value : []
     teams   = teamsRes.status   === 'fulfilled' ? teamsRes.value   : []
 
+    // If Jolpica failed or has stale data, try ESPN
     if (!isValidStandings(drivers)) {
+      console.log('[f1] Jolpica standings invalid, trying ESPN...')
+      try {
+        const espnStandings = await getStandings('f1')
+        const espnDrivers = normalizeStandingsEntries(espnStandings)
+        if (espnDrivers.length > 0) {
+          drivers = espnDrivers
+          console.log(`[f1] ESPN standings: ${drivers.length} drivers`)
+        }
+      } catch (err) {
+        console.error('[f1] ESPN standings error:', err.message)
+      }
+    }
+
+    // Final fallback if both sources failed
+    if (!drivers.length) {
       drivers = fb.standings.drivers
       teams   = fb.standings.teams
     }
@@ -312,7 +391,12 @@ export async function onRequestGet({ env }) {
         teams:   teams.length ? teams : fb.standings.teams,
       },
       weather:       weather       || fb.weather,
-      talkingPoints: fb.talkingPoints,
+      talkingPoints: generateRacePreview(
+        isValidStandings(drivers) ? drivers : fb.standings.drivers,
+        teams.length ? teams : fb.standings.teams,
+        raceName || 'F1 Grand Prix',
+        raceCircuit || ''
+      ),
       officialLinks: fb.officialLinks,
     }
 
