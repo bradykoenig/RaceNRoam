@@ -7,6 +7,7 @@
 import { buildResponse, corsOptionsResponse } from '../_lib/utils/apiResponse.js'
 import { getF1LiveData, getF1Locations } from '../_lib/providers/f1/f1LiveProvider.js'
 import { getNascarLiveData }              from '../_lib/providers/nascar/nascarLiveProvider.js'
+import { cacheGet, cacheSet, getCacheTtl } from '../_lib/utils/cache.js'
 
 const NOT_AVAILABLE = {
   'indycar':  { name: 'IndyCar',  url: 'https://racecontrol.indycar.com/timing' },
@@ -24,11 +25,15 @@ function json(body, cacheSeconds = 30) {
   })
 }
 
-export async function onRequestGet({ request }) {
+export async function onRequestGet({ request, env }) {
   const series = new URL(request.url).searchParams.get('series') || 'f1'
+  const cacheKey = `live:${series}`
 
   // ── F1 via OpenF1 ─────────────────────────────────────────
   if (series === 'f1') {
+    const cached = await cacheGet(env, cacheKey)
+    if (cached) return json({ ok: true, series: 'f1', _cacheHit: true, ...cached })
+
     try {
       const data = await getF1LiveData()
 
@@ -40,18 +45,27 @@ export async function onRequestGet({ request }) {
         }
       }
 
+      await cacheSet(env, cacheKey, data, getCacheTtl(env, 'live'))
       return json({ ok: true, series: 'f1', ...data })
     } catch (err) {
+      const cached = await cacheGet(env, cacheKey)
+      if (cached) return json({ ok: true, series: 'f1', _cacheFallback: true, ...cached })
       return json({ ok: false, series: 'f1', isLive: false, error: err.message })
     }
   }
 
   // ── NASCAR via NASCAR.com public feed ─────────────────────
   if (series === 'nascar') {
+    const cached = await cacheGet(env, cacheKey)
+    if (cached) return json({ ok: true, series: 'nascar', _cacheHit: true, ...cached })
+
     try {
       const data = await getNascarLiveData()
+      await cacheSet(env, cacheKey, data, getCacheTtl(env, 'live'))
       return json({ ok: true, series: 'nascar', ...data })
     } catch (err) {
+      const cached = await cacheGet(env, cacheKey)
+      if (cached) return json({ ok: true, series: 'nascar', _cacheFallback: true, ...cached })
       return json({ ok: false, series: 'nascar', isLive: false, error: err.message })
     }
   }

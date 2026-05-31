@@ -3,16 +3,12 @@ compatibility_date = "2024-09-23"
 pages_build_output_dir = "dist"
 
 # ============================================================
-# Cloudflare KV Namespace – Optional server-side caching
+# Cloudflare KV Namespace – Caching for live data
 # ============================================================
-# Step 1: Create a KV namespace in Cloudflare Dashboard or via:
-#   wrangler kv namespace create RACE_HUB_CACHE
-# Step 2: Uncomment the block below and fill in the ID:
-#
-# [[kv_namespaces]]
-# binding = "RACE_HUB_CACHE"
-# id = "YOUR_KV_NAMESPACE_ID_HERE"
-# preview_id = "YOUR_PREVIEW_KV_NAMESPACE_ID_HERE"
+[[kv_namespaces]]
+binding = "RACE_HUB_CACHE"
+id = "868c20b437674c36bad78e738e1d6b00"
+preview_id = "774ede36f69d48c69d66d5ae1eaf9332"
 
 # ============================================================
 # Default Variable Values (override in Cloudflare Dashboard)
@@ -27,3 +23,6 @@ WEATHER_PROVIDER = "open-meteo"
 DEFAULT_CACHE_TTL_SECONDS = "300"
 LIVE_CACHE_TTL_SECONDS = "30"
 WEATHER_CACHE_TTL_SECONDS = "600"
+VITE_SUPABASE_URL = "https://ovhihtvrunfxyjxwphzz.supabase.co"
+VITE_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_xWfcAHKKtiiZkX2NVN9rRw_MHApqGKa"
+VITE_SUPABASE_PROJECT_ID = "ovhihtvrunfxyjxwphzz"
