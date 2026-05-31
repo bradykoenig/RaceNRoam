@@ -65,41 +65,51 @@ export async function onRequestGet({ env }) {
       console.error('ESPN F1 error:', err.message)
     }
 
-    // ── Step 2: OpenF1 for full weekend session schedule (FP1/FP2/FP3/Quali/Race) ──
+    // ── Step 2: OpenF1 for full session schedule + circuit info + correct race date ──
     let of1Snapshot = null
     try {
       const meeting = await getLatestMeeting()
       if (meeting) {
         const meetingSessions = await getAllSessionsForMeeting(meeting.meeting_key)
         if (meetingSessions.length > 0) {
-          // Build full session schedule from OpenF1
+          // Build full session schedule from OpenF1 (FP1, FP2, FP3, Quali, Race)
           const of1Schedule = meetingSessions.map(s => ({
             session:   s.session_name || s.session_type || 'Session',
             startTime: s.date_start,
             endTime:   s.date_end,
             status:    new Date(s.date_end) < new Date() ? 'Completed' : 'Upcoming',
           }))
+          if (of1Schedule.length > 0) schedule = of1Schedule
 
-          // If ESPN gave us the race name but OpenF1 has better session data, merge them
-          if (of1Schedule.length > 1) {
-            schedule = of1Schedule
+          // Find the actual RACE session for the correct date
+          const raceSession = meetingSessions.find(s =>
+            s.session_name?.toLowerCase() === 'race' ||
+            s.session_type?.toLowerCase() === 'race'
+          )
+
+          // Always update race date to the actual race session date (not FP1)
+          if (race && raceSession?.date_start) {
+            race.date = raceSession.date_start
           }
 
-          // If ESPN failed, use OpenF1 for race name too
+          // Fill in circuit info from OpenF1 (more reliable than ESPN for F1)
+          if (race) {
+            race.circuit  = meetingSessions[0]?.circuit_short_name || meeting.circuit_short_name || race.circuit || meeting.location || ''
+            race.location = meeting.location || race.location || ''
+            race.country  = meeting.country_name || race.country || ''
+          }
+
+          // If ESPN failed, use OpenF1 for everything
           if (!race) {
-            const raceSession = meetingSessions.find(s =>
-              s.session_name?.toLowerCase() === 'race' ||
-              s.session_type?.toLowerCase() === 'race'
-            )
             race = {
-              round:    meeting.meeting_key,
-              name:     (meeting.meeting_official_name || meeting.meeting_name || 'F1 Race')
-                          .replace(/^Formula 1\s+/i, '').replace(/\s+\d{4}$/, '').trim(),
-              circuit:  meeting.circuit_short_name || meeting.location || '',
+              round:   meeting.meeting_key,
+              name:    (meeting.meeting_official_name || meeting.meeting_name || 'F1 Race')
+                         .replace(/^Formula 1\s+/i, '').replace(/\s+\d{4}$/, '').trim(),
+              circuit: meetingSessions[0]?.circuit_short_name || meeting.circuit_short_name || meeting.location || '',
               location: meeting.location || '',
               country:  meeting.country_name || '',
               date:     raceSession?.date_start || meeting.date_start,
-              lat:      null, lon: null, sessions: {},
+              lat: null, lon: null, sessions: {},
             }
           }
 
