@@ -37,25 +37,9 @@ export function getFallbackF1Data() {
       { session: 'Race',        startTime: '2026-06-14T14:00:00-04:00', status: 'Upcoming' },
     ],
     standings: {
-      drivers: [
-        { pos: 1,  driver: 'Max Verstappen',   team: 'Red Bull Racing',      pts: 175, teamColor: '#3671C6', nat: '🇳🇱' },
-        { pos: 2,  driver: 'Lando Norris',     team: 'McLaren',              pts: 159, teamColor: '#FF8000', nat: '🇬🇧' },
-        { pos: 3,  driver: 'Charles Leclerc',  team: 'Ferrari',              pts: 142, teamColor: '#E8002D', nat: '🇲🇨' },
-        { pos: 4,  driver: 'Carlos Sainz',     team: 'Ferrari',              pts: 128, teamColor: '#E8002D', nat: '🇪🇸' },
-        { pos: 5,  driver: 'Oscar Piastri',    team: 'McLaren',              pts: 121, teamColor: '#FF8000', nat: '🇦🇺' },
-        { pos: 6,  driver: 'George Russell',   team: 'Mercedes',             pts: 109, teamColor: '#27F4D2', nat: '🇬🇧' },
-        { pos: 7,  driver: 'Lewis Hamilton',   team: 'Ferrari',              pts: 96,  teamColor: '#E8002D', nat: '🇬🇧' },
-        { pos: 8,  driver: 'Sergio Perez',     team: 'Red Bull Racing',      pts: 88,  teamColor: '#3671C6', nat: '🇲🇽' },
-        { pos: 9,  driver: 'Fernando Alonso',  team: 'Aston Martin',         pts: 72,  teamColor: '#358C75', nat: '🇪🇸' },
-        { pos: 10, driver: 'Lance Stroll',     team: 'Aston Martin',         pts: 44,  teamColor: '#358C75', nat: '🇨🇦' },
-      ],
-      teams: [
-        { pos: 1, team: 'Red Bull Racing', pts: 263, color: '#3671C6' },
-        { pos: 2, team: 'McLaren',         pts: 280, color: '#FF8000' },
-        { pos: 3, team: 'Ferrari',         pts: 366, color: '#E8002D' },
-        { pos: 4, team: 'Mercedes',        pts: 148, color: '#27F4D2' },
-        { pos: 5, team: 'Aston Martin',    pts: 116, color: '#358C75' },
-      ],
+      source: 'unavailable',
+      drivers: [],
+      teams: [],
     },
     startingGrid: [],
     weather: {

@@ -309,35 +309,30 @@ export async function onRequestGet({ env }) {
     // Use fallback schedule if we still have nothing
     if (!schedule.length) schedule = fb.schedule
 
-    // ── 4. Standings (Jolpica → ESPN → fallback) ───────────────────────────────
+    // ── 4. Standings (Jolpica ONLY — no fake fallback) ────────────────────────
     let drivers = []
     let teams   = []
-    const [driversRes, teamsRes] = await Promise.allSettled([
-      getDriverStandings(),
-      getConstructorStandings(),
-    ])
-    drivers = driversRes.status === 'fulfilled' ? driversRes.value : []
-    teams   = teamsRes.status   === 'fulfilled' ? teamsRes.value   : []
+    let standingsSource = 'unavailable'
 
-    // If Jolpica failed or has stale data, try ESPN
-    if (!isValidStandings(drivers)) {
-      console.log('[f1] Jolpica standings invalid, trying ESPN...')
-      try {
-        const espnStandings = await getStandings('f1')
-        const espnDrivers = normalizeStandingsEntries(espnStandings)
-        if (espnDrivers.length > 0) {
-          drivers = espnDrivers
-          console.log(`[f1] ESPN standings: ${drivers.length} drivers`)
-        }
-      } catch (err) {
-        console.error('[f1] ESPN standings error:', err.message)
+    try {
+      const [driversRes, teamsRes] = await Promise.allSettled([
+        getDriverStandings(),
+        getConstructorStandings(),
+      ])
+      drivers = driversRes.status === 'fulfilled' ? driversRes.value : []
+      teams   = teamsRes.status   === 'fulfilled' ? teamsRes.value   : []
+
+      if (drivers.length > 0 && teams.length > 0) {
+        standingsSource = 'jolpica'
+        console.log(`[f1] Jolpica standings: ${drivers.length} drivers, ${teams.length} teams`)
+      } else {
+        console.warn('[f1] Jolpica standings returned empty arrays')
       }
-    }
-
-    // Final fallback if both sources failed
-    if (!drivers.length) {
-      drivers = fb.standings.drivers
-      teams   = fb.standings.teams
+    } catch (err) {
+      console.error('[f1] Jolpica standings fetch failed:', err.message)
+      // Do NOT fall back to fake data — return empty arrays instead
+      drivers = []
+      teams = []
     }
 
     // ── 5. Weather ────────────────────────────────────────────────────────────
@@ -404,11 +399,12 @@ export async function onRequestGet({ env }) {
       },
       schedule,    // all sessions sorted by date with correct types
       standings: {
-        drivers: isValidStandings(drivers) ? drivers : fb.standings.drivers,
-        teams:   teams.length ? teams : fb.standings.teams,
+        source: standingsSource,
+        drivers: drivers,  // Empty if Jolpica failed — UI will hide section
+        teams:   teams,    // Empty if Jolpica failed — UI will hide section
       },
       weather:       weather       || fb.weather,
-      talkingPoints: [], // TODO: only generate preview once standings are confirmed correct
+      talkingPoints: [],
       officialLinks: fb.officialLinks,
     }
 
