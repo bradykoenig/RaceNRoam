@@ -53,13 +53,7 @@ export function getFallbackF1Data() {
       temperature: 22, conditions: 'Partly Cloudy', windSpeed: '18 km/h',
       humidity: '55%', rainChance: '20%', source: 'fallback',
     },
-    talkingPoints: [
-      'Verstappen seeks a fourth consecutive Canadian GP win on this fast-flowing circuit.',
-      'Lewis Hamilton lines up in Ferrari red for the first time at Montreal.',
-      'McLaren arrive with momentum after a Monaco 1-2 – team orders possible again?',
-      'Wall of Champions strikes in practice – will qualifying be chaotic?',
-      'Norris is 16 points behind Verstappen – championship-defining weekend.',
-    ],
+    talkingPoints: [],
     officialLinks: [
       { label: 'Formula 1 Official', url: 'https://www.formula1.com', icon: '🏎️' },
       { label: 'Driver Standings',   url: 'https://www.formula1.com/en/results/2026/drivers', icon: '🏆' },

@@ -68,13 +68,7 @@ export function getFallbackF1Data() {
       rainChance: '20%',
       source: 'forecast',
     },
-    talkingPoints: [
-      'Verstappen seeks a fourth consecutive Canadian GP victory – can anyone challenge him on this fast-flowing circuit?',
-      'Lewis Hamilton lines up in Ferrari red for the first time at Montreal, creating an historic talking point for fans.',
-      'McLaren arrive in Canada with serious momentum after a 1-2 finish at Monaco – team orders or racing?',
-      'The Wall of Champions has already claimed Leclerc and Russell in practice – will it strike again in qualifying?',
-      'Lando Norris is only 16 points behind Verstappen – this could be a championship-defining weekend.',
-    ],
+    talkingPoints: [],
     officialLinks: [
       { label: 'F1 Official Site',     url: 'https://www.formula1.com', icon: '🏎️' },
       { label: 'Race Programme',        url: 'https://www.formula1.com/en/racing/2026/Canada', icon: '📅' },
