@@ -7,7 +7,10 @@ const YEAR = new Date().getFullYear()
 
 async function get(path) {
   const url = `${BASE}${path}`
-  const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+  const res = await fetch(url, {
+    headers: { 'Accept': 'application/json' },
+    cache: 'no-store',   // bypass Cloudflare edge cache — always get fresh Jolpica data
+  })
   if (!res.ok) throw new Error(`Jolpica ${path} → HTTP ${res.status}`)
   return res.json()
 }
