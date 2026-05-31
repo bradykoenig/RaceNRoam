@@ -458,7 +458,7 @@ p  { color: var(--text-gray); line-height: 1.6; }
 .race-card-track { font-size: 0.8rem; color: var(--text-dim); margin-bottom: var(--sp-4); }
 .race-card-meta { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .race-card-stat { display: flex; flex-direction: column; }
-.race-card-stat-val { font-size: 0.875rem; font-weight: 600; color: var(--text-white); }
+.race-card-stat-val { font-size: 1.1rem; font-weight: 600; color: var(--text-white); }
 .race-card-stat-lbl { font-family: var(--font-display); font-size: 0.6rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; }
 .race-card-divider { width: 1px; height: 26px; background: var(--border-dim); flex-shrink: 0; }
 
