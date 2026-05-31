@@ -24,7 +24,13 @@ export default function RaceCard({ race, series, showCountdown = true }) {
           <div>
             {race.flag && <span style={{ fontSize: '1.5rem', marginRight: 'var(--sp-2)' }}>{race.flag}</span>}
             <h3 className="race-card-name">{race.name}</h3>
-            <p className="race-card-track">{race.track} · {race.location}</p>
+            {(race.track || race.location) && (
+              <p className="race-card-track">
+                {race.track && <span>{race.track}</span>}
+                {race.track && race.location && <span> · </span>}
+                {race.location && <span>{race.location}</span>}
+              </p>
+            )}
           </div>
           <StatusBadge status={race.status || 'Upcoming'} />
         </div>
