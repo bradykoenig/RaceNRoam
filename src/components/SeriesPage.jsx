@@ -6,7 +6,6 @@ import TrackInfoCard from './TrackInfoCard'
 import WeatherCard from './WeatherCard'
 import ScheduleCard from './ScheduleCard'
 import StandingsTable from './StandingsTable'
-import TalkingPoints from './TalkingPoints'
 import OfficialLinks from './OfficialLinks'
 import LoadingState from './LoadingState'
 import ErrorState from './ErrorState'
@@ -25,7 +24,6 @@ export default function SeriesPage({ series, data, loading, error, onRefresh }) 
   const schedule  = d.schedule || []
   const standings = d.standings || {}
   const weather   = d.weather
-  const talking   = d.talkingPoints || []
   const links     = d.officialLinks  || []
   const classes   = d.classes
 
@@ -189,14 +187,6 @@ export default function SeriesPage({ series, data, loading, error, onRefresh }) 
               <StandingsTable teams={standings.teams} type="teams" limit={10} />
             </div>
           </div>
-        </section>
-      )}
-
-      {/* Talking Points */}
-      {talking.length > 0 && (
-        <section className="section">
-          <p className="section-title">Race Weekend Talking Points</p>
-          <TalkingPoints points={talking} />
         </section>
       )}
 
