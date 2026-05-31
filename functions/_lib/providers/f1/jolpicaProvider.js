@@ -19,9 +19,8 @@ function safeGet(data, ...keys) {
   return keys.reduce((obj, k) => obj?.[k], data)
 }
 
-// Use /current/ endpoint for guaranteed current season schedule
 export async function getCurrentSeasonSchedule() {
-  const data = await get('/current/')
+  const data = await get(`/${YEAR}.json?limit=30`)
   const races = safeGet(data, 'MRData', 'RaceTable', 'Races') || []
   return races.map(r => ({
     round:     parseInt(r.round, 10),
@@ -65,9 +64,8 @@ export async function getNextRace() {
   }
 }
 
-// Use /current/ endpoints for guaranteed current-season data
-export async function getCurrentDriverStandings() {
-  const data = await get('/current/driverstandings/')
+export async function getDriverStandings() {
+  const data = await get(`/${YEAR}/driverStandings.json`)
   const list = safeGet(data, 'MRData', 'StandingsTable', 'StandingsLists', 0, 'DriverStandings') || []
   return list.map(s => ({
     pos:    parseInt(s.position, 10),
@@ -79,8 +77,8 @@ export async function getCurrentDriverStandings() {
   }))
 }
 
-export async function getCurrentConstructorStandings() {
-  const data = await get('/current/constructorstandings/')
+export async function getConstructorStandings() {
+  const data = await get(`/${YEAR}/constructorStandings.json`)
   const list = safeGet(data, 'MRData', 'StandingsTable', 'StandingsLists', 0, 'ConstructorStandings') || []
   return list.map(s => ({
     pos:  parseInt(s.position, 10),
@@ -88,15 +86,6 @@ export async function getCurrentConstructorStandings() {
     pts:  parseFloat(s.points),
     wins: parseInt(s.wins, 10),
   }))
-}
-
-// Legacy names for backwards compatibility
-export async function getDriverStandings() {
-  return getCurrentDriverStandings()
-}
-
-export async function getConstructorStandings() {
-  return getCurrentConstructorStandings()
 }
 
 export async function getRaceResults(round = 'last') {
