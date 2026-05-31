@@ -123,7 +123,8 @@ export default function Layout() {
               <a href="https://www.tiktok.com/@racenroam" target="_blank" rel="noopener noreferrer">TikTok</a>
               <a href="https://www.youtube.com/@RaceNRoam" target="_blank" rel="noopener noreferrer">YouTube</a>
               <Link to="/stream">Stream Mode</Link>
-              <Link to="/calendar">Calendar</Link>
+              <Link to="/watch-party/calendar">Calendar</Link>
+              <Link to="/watch-party">Watch Party</Link>
             </div>
           </div>
 

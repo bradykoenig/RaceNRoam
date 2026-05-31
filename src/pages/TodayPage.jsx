@@ -153,7 +153,7 @@ export default function TodayPage() {
             <p style={{ color: 'var(--text-muted)', marginTop: 'var(--sp-3)' }}>
               Check the calendar for upcoming events across all series.
             </p>
-            <Link to="/calendar" className="btn btn-primary" style={{ marginTop: 'var(--sp-6)' }}>
+            <Link to="/watch-party/calendar" className="btn btn-primary" style={{ marginTop: 'var(--sp-6)' }}>
               📅 View Calendar
             </Link>
           </div>

@@ -263,7 +263,7 @@ export default function HomePage() {
 
               {/* CTAs */}
               <div style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap', marginBottom: 'var(--sp-6)' }}>
-                <Link to="/hub" className="btn btn-primary btn-lg">
+                <Link to="/watch-party" className="btn btn-primary btn-lg">
                   Enter Race Hub
                 </Link>
                 <Link to="/stream" className="btn btn-secondary btn-lg">
@@ -350,7 +350,7 @@ export default function HomePage() {
               )
             })}
             <Link
-              to="/calendar"
+              to="/watch-party/calendar"
               style={{
                 marginLeft: 'auto', fontFamily: 'var(--font-display)', fontSize: '0.72rem',
                 fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',

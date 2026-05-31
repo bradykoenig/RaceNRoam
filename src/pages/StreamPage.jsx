@@ -32,7 +32,7 @@ function StreamTopbar({ series, meta, refreshing, lastFetch, onRefresh }) {
     <div className="stream-topbar">
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-4)' }}>
         <Link
-          to="/hub"
+          to="/watch-party"
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '5px 14px', borderRadius: 'var(--r-md)',
