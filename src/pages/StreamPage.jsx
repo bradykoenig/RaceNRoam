@@ -318,7 +318,7 @@ function IdleStreamBody({ d, meta, series, lastFetch }) {
             {countdownTarget && (
               <div className="stream-countdown-wrap">
                 {countdownSession && countdownSession !== 'Race' && (
-                  <div style={{ fontSize:'0.7rem', color:'#666', marginBottom:'var(--sp-2)', fontFamily:'var(--font-display)', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em' }}>
+                  <div style={{ fontSize:'0.85rem', color:'#999', marginBottom:'var(--sp-3)', fontFamily:'var(--font-display)', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>
                     Countdown to {countdownSession}
                   </div>
                 )}

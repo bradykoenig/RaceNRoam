@@ -599,10 +599,10 @@ p  { color: var(--text-gray); line-height: 1.6; }
 .stream-logo span { color: var(--red); }
 .stream-series-badge { padding: 3px 10px; border-radius: var(--r-sm); font-family: var(--font-display); font-size: 0.7rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; background: var(--hub-color, var(--red)); color: #fff; }
 .stream-body { flex: 1; display: flex; flex-direction: column; }
-.stream-hero { padding: var(--sp-8) var(--sp-8) var(--sp-6); border-bottom: 1px solid #0f0f0f; text-align: center; }
+.stream-hero { padding: var(--sp-8) var(--sp-8) var(--sp-8); border-bottom: 1px solid #0f0f0f; text-align: center; }
+.stream-countdown-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: var(--sp-4); }
 .stream-race-title { font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 3.25rem); font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.05; margin-bottom: var(--sp-2); background: linear-gradient(135deg, #fff 0%, #ccc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 .stream-track { font-size: 0.875rem; color: #888; margin-bottom: var(--sp-6); letter-spacing: 0.04em; font-family: var(--font-display); font-weight: 700; text-transform: uppercase; }
-.stream-countdown-wrap { display: flex; justify-content: center; margin-bottom: var(--sp-2); }
 .stream-layout .countdown.large .countdown-digit { font-size: clamp(3rem, 7vw, 5.5rem); min-width: clamp(80px, 16vw, 130px); background: #0a0a0a; border: 1px solid #1a1a1a; border-bottom: 2px solid var(--red); color: #fff; padding: var(--sp-3) var(--sp-4); border-radius: 2px; }
 .stream-layout .countdown.large .countdown-sep { font-size: clamp(2.5rem, 6vw, 4.5rem); color: #444; font-weight: 300; }
 .stream-panels { display: grid; grid-template-columns: 1fr 1fr; flex: 1; }
@@ -625,13 +625,15 @@ p  { color: var(--text-gray); line-height: 1.6; }
 /* ── Pre-Session Dashboard ──────────────────────────────── */
 .stream-pre-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #111; flex: 1; }
 .stream-pre-card { background: #040406; padding: var(--sp-6) var(--sp-8); overflow-y: auto; }
-.stream-pre-card-hdr { font-family: var(--font-display); font-size: 0.6rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.2em; color: var(--red); opacity: 0.8; margin-bottom: var(--sp-4); }
-.stream-sched-row { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-2) var(--sp-3); border-radius: 2px; margin-bottom: 2px; font-size: 0.85rem; }
-.stream-sched-row.next { background: #0e0e14; border-left: 3px solid var(--hub-color, var(--red)); }
-.stream-sched-name { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.02em; color: #ccc; }
-.stream-sched-time { font-family: var(--font-mono); font-size: 0.75rem; color: #666; }
-.stream-sched-badge { font-family: var(--font-display); font-size: 0.5rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; padding: 3px 8px; border-radius: 2px; background: rgba(51, 153, 255, 0.2); color: #0099ff; }
-.stream-sched-badge.next { background: rgba(232, 0, 45, 0.25); color: var(--red); }
+.stream-pre-card-hdr { font-family: var(--font-display); font-size: 0.65rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.15em; color: var(--red); opacity: 0.9; margin-bottom: var(--sp-5); }
+.stream-sched-row { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-3) var(--sp-4); border-radius: 2px; margin-bottom: 4px; font-size: 0.85rem; }
+.stream-sched-row.next { background: #0e0e14; border-left: 4px solid var(--hub-color, var(--red)); padding-left: var(--sp-3); }
+.stream-sched-name { font-family: var(--font-display); font-weight: 800; letter-spacing: 0.02em; color: #ddd; font-size: 0.9rem; }
+.stream-sched-row.next .stream-sched-name { color: #fff; font-weight: 900; }
+.stream-sched-time { font-family: var(--font-mono); font-size: 0.78rem; color: #777; }
+.stream-sched-row.next .stream-sched-time { color: #999; }
+.stream-sched-badge { font-family: var(--font-display); font-size: 0.52rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; padding: 4px 10px; border-radius: 2px; background: rgba(51, 153, 255, 0.2); color: #0099ff; }
+.stream-sched-badge.next { background: rgba(232, 0, 45, 0.3); color: var(--red); font-weight: 900; }
 .stream-status-badge { display: inline-block; padding: 3px 8px; border-radius: 2px; font-family: var(--font-display); font-size: 0.55rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; background: rgba(100, 100, 120, 0.3); color: #888; margin-bottom: var(--sp-4); }
 .stream-info-row { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid #0d0d0d; font-size: 0.8rem; }
 .stream-info-row:last-child { border-bottom: none; }
