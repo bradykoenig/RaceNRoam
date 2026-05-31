@@ -5,11 +5,10 @@ pages_build_output_dir = "dist"
 # ============================================================
 # Cloudflare KV Namespace – Caching for live data
 # ============================================================
-# KV will be added via Cloudflare dashboard after initial deployment
-# [[kv_namespaces]]
-# binding = "RACE_HUB_CACHE"
-# id = "YOUR_NAMESPACE_ID"
-# preview_id = "YOUR_PREVIEW_ID"
+[[kv_namespaces]]
+binding = "RACE_HUB_CACHE"
+id = "5d2b54d823d1479b86a286b20f445e35"
+preview_id = "c66d82a2474d458cb705d3a46ca848a3"
 
 # ============================================================
 # Default Variable Values (override in Cloudflare Dashboard)
