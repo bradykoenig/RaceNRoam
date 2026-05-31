@@ -51,8 +51,16 @@ export async function getMeetingByKey(meetingKey) {
   return meetings?.[0] || null
 }
 
+export async function getAllSessionsForMeeting(meetingKey) {
+  try {
+    const sessions = await get('/sessions', { meeting_key: meetingKey })
+    if (!sessions?.length) return []
+    return sessions.sort((a, b) => new Date(a.date_start) - new Date(b.date_start))
+  } catch { return [] }
+}
+
 export async function getCurrentOrNextSession(meetingKey) {
-  const sessions = await get('/sessions', { meeting_key: meetingKey, year: YEAR })
+  const sessions = await getAllSessionsForMeeting(meetingKey)
   if (!sessions?.length) return null
   const now = Date.now()
   const upcoming = sessions.filter(s => new Date(s.date_end).getTime() > now)
