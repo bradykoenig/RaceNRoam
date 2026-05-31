@@ -108,9 +108,14 @@ const Orders = () => {
           <h1 className="font-display text-2xl tracking-[4px]">ORDERS</h1>
           <span className="font-tech text-[10px] tracking-[2px] text-grey-light uppercase">{orders.length} TOTAL</span>
         </div>
-        <button onClick={handleSignOut} className="font-tech text-[10px] tracking-[2px] uppercase text-grey-light hover:text-foreground flex items-center gap-2">
-          <LogOut className="w-4 h-4" /> Sign out
-        </button>
+        <div className="flex items-center gap-3">
+          <a href="/" style={{ fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.04em', color: '#fff', textDecoration: 'none', padding: '10px 16px', background: '#e63946', border: '2px solid #e63946', borderRadius: '0px', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(230, 57, 70, 0.4)', display: 'inline-block' }} onMouseEnter={(e) => (e.currentTarget.style.background = '#d62828', e.currentTarget.style.boxShadow = '0 6px 20px rgba(230, 57, 70, 0.6)', e.currentTarget.style.transform = 'translateY(-2px)')} onMouseLeave={(e) => (e.currentTarget.style.background = '#e63946', e.currentTarget.style.boxShadow = '0 4px 12px rgba(230, 57, 70, 0.4)', e.currentTarget.style.transform = 'translateY(0)')}>
+            ← BACK TO SITE
+          </a>
+          <button onClick={handleSignOut} style={{ fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.04em', color: '#fff', padding: '10px 16px', background: '#e63946', border: '2px solid #e63946', borderRadius: '0px', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(230, 57, 70, 0.4)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }} onMouseEnter={(e) => (e.currentTarget.style.background = '#d62828', e.currentTarget.style.boxShadow = '0 6px 20px rgba(230, 57, 70, 0.6)', e.currentTarget.style.transform = 'translateY(-2px)')} onMouseLeave={(e) => (e.currentTarget.style.background = '#e63946', e.currentTarget.style.boxShadow = '0 4px 12px rgba(230, 57, 70, 0.4)', e.currentTarget.style.transform = 'translateY(0)')}>
+            <LogOut className="w-4 h-4" /> SIGN OUT
+          </button>
+        </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-5 md:px-12 py-8 space-y-4">

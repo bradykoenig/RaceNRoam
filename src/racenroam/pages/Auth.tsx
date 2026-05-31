@@ -44,6 +44,9 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-5">
+      <a href="/" style={{ position: 'absolute', top: '20px', left: '20px', fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.04em', color: '#fff', textDecoration: 'none', padding: '12px 20px', background: '#e63946', border: '2px solid #e63946', borderRadius: '0px', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(230, 57, 70, 0.4)' }} onMouseEnter={(e) => (e.currentTarget.style.background = '#d62828', e.currentTarget.style.boxShadow = '0 6px 20px rgba(230, 57, 70, 0.6)', e.currentTarget.style.transform = 'translateY(-2px)')} onMouseLeave={(e) => (e.currentTarget.style.background = '#e63946', e.currentTarget.style.boxShadow = '0 4px 12px rgba(230, 57, 70, 0.4)', e.currentTarget.style.transform = 'translateY(0)')}>
+        ← BACK TO SITE
+      </a>
       <div className="max-w-md w-full bg-grey-dark border border-grey-mid p-8">
         <h1 className="font-display text-4xl tracking-[4px] text-foreground mb-2">ADMIN {mode === "signup" ? "SIGN UP" : "LOGIN"}</h1>
         <p className="font-tech text-[10px] tracking-[3px] text-grey-light uppercase mb-6">For store owners — view orders</p>

@@ -29,12 +29,17 @@ export const Nav = () => {
           </li>
         ))}
       </ul>
-      <button
-        onClick={() => setIsOpen(true)}
-        className="font-tech text-[11px] font-bold tracking-[2px] text-background bg-primary px-5 py-2.5 clip-angle-sm hover:bg-primary-bright transition-colors flex items-center gap-2"
-      >
-        <ShoppingCart className="w-4 h-4" /> CART ({count})
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <a href="/auth" className="font-tech text-[11px] font-bold tracking-[2px] text-background bg-primary px-5 py-2.5 clip-angle-sm hover:bg-primary-bright transition-colors">
+          ADMIN CENTER
+        </a>
+        <button
+          onClick={() => setIsOpen(true)}
+          className="font-tech text-[11px] font-bold tracking-[2px] text-background bg-primary px-5 py-2.5 clip-angle-sm hover:bg-primary-bright transition-colors flex items-center gap-2"
+        >
+          <ShoppingCart className="w-4 h-4" /> CART ({count})
+        </button>
+      </div>
     </nav>
   );
 };

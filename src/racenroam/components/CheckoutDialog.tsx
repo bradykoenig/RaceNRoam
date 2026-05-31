@@ -65,14 +65,23 @@ export const CheckoutDialog = () => {
       const shipping = 8;
       const orderTotal = total + shipping;
       const note = `Order for ${parsed.data.customer_name} — ${items.map(i => `${i.quantity}x ${i.name}${i.size ? ` (${i.size})` : ""}`).join(", ")} + $${shipping.toFixed(2)} shipping`;
-      const { data, error } = await supabase.functions.invoke("submit-order", {
-        body: {
+      const res = await fetch("/api/submit-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           ...parsed.data,
           items: items.map((i) => ({ id: i.id, name: i.name, price: i.price, quantity: i.quantity, size: i.size })),
           shipping_amount: shipping,
-        },
+        }),
       });
-      if (error) throw error;
+      console.log("submit-order response status:", res.status);
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("submit-order error response:", errText);
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+      const data = await res.json();
+      console.log("submit-order response data:", data);
       if (!data?.success) throw new Error(data?.error || "Order failed");
       setOrderId(data.order_id);
       setSubmitted(true);
@@ -90,9 +99,9 @@ export const CheckoutDialog = () => {
 
   return (
     <Dialog open={isCheckoutOpen} onOpenChange={handleClose}>
-      <DialogContent className="bg-background border border-primary/30 text-foreground max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent style={{ background: '#111111', borderColor: 'hsl(var(--primary) / 0.5)' }} className="border text-foreground max-w-2xl backdrop-blur-0 p-0 flex flex-col max-h-none h-auto">
         {submitted ? (
-          <div className="text-center py-8">
+          <div className="text-center py-8 px-6">
             <CheckCircle2 className="w-16 h-16 text-primary-bright mx-auto mb-4" />
             <DialogTitle className="font-display text-4xl tracking-[4px] mb-2">ORDER SAVED</DialogTitle>
             <p className="font-body text-grey-text mb-2">Your shipping info is saved. Complete payment with PayPal to finalize your order.</p>
@@ -109,11 +118,11 @@ export const CheckoutDialog = () => {
           </div>
         ) : (
           <>
-            <DialogHeader>
-              <DialogTitle className="font-display text-3xl tracking-[4px]">CHECKOUT</DialogTitle>
+            <div className="px-6 py-8 border-b border-grey-mid">
+              <DialogTitle className="font-display text-3xl tracking-[4px] mb-3">CHECKOUT</DialogTitle>
               <p className="font-tech text-[10px] tracking-[3px] text-grey-light uppercase">{items.length} item(s) — ${total.toFixed(2)}</p>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-5 mt-4">
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-5 px-6 py-6 overflow-y-auto max-h-[55vh]">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Full Name *</label>
@@ -161,32 +170,32 @@ export const CheckoutDialog = () => {
                 <label className={labelClass}>Order Notes (optional)</label>
                 <textarea className={`${inputClass} min-h-[70px] resize-none`} value={form.notes} onChange={update("notes")} maxLength={1000} placeholder="Any special instructions?" />
               </div>
+            </form>
 
-              <div className="border-t border-grey-mid pt-4 space-y-3">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between font-tech text-xs text-grey-light">
-                    <span className="tracking-[2px] uppercase">Subtotal</span>
-                    <span>${total.toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between font-tech text-xs text-grey-light">
-                    <span className="tracking-[2px] uppercase">Shipping</span>
-                    <span>$8.00</span>
-                  </div>
+            <div className="border-t border-grey-mid px-6 py-6 space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between font-tech text-xs text-grey-light">
+                  <span className="tracking-[2px] uppercase">Subtotal</span>
+                  <span>${total.toFixed(2)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-tech text-[10px] tracking-[3px] text-grey-light uppercase">Order Total</div>
-                    <div className="font-display text-3xl tracking-wider">${(total + 8).toFixed(2)}</div>
-                  </div>
-                  <button type="submit" disabled={submitting || items.length === 0} className="btn-race disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                    {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> SUBMITTING...</> : "CONTINUE TO PAYPAL"}
-                  </button>
+                <div className="flex items-center justify-between font-tech text-xs text-grey-light">
+                  <span className="tracking-[2px] uppercase">Shipping</span>
+                  <span>$8.00</span>
                 </div>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="font-tech text-[10px] tracking-[3px] text-grey-light uppercase">Order Total</div>
+                  <div className="font-display text-3xl tracking-wider">${(total + 8).toFixed(2)}</div>
+                </div>
+                <button onClick={handleSubmit} disabled={submitting || items.length === 0} style={{ background: '#e63946', color: '#fff', padding: '16px 24px', borderRadius: '0px', fontWeight: 700, border: '3px solid #e63946', transition: 'all 0.2s', cursor: 'pointer', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', boxShadow: '0 4px 12px rgba(230, 57, 70, 0.4)', whiteSpace: 'nowrap' }} className="disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-display tracking-wider flex-shrink-0" onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.background = '#d62828', e.currentTarget.style.boxShadow = '0 6px 20px rgba(230, 57, 70, 0.6)', e.currentTarget.style.transform = 'translateY(-2px)')} onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.background = '#e63946', e.currentTarget.style.boxShadow = '0 4px 12px rgba(230, 57, 70, 0.4)', e.currentTarget.style.transform = 'translateY(0)')}>
+                  {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> SUBMITTING...</> : "CONTINUE TO PAYPAL"}
+                </button>
               </div>
               <p className="font-body text-xs text-grey-light text-center">
                 Your shipping info is saved, then you'll be redirected to PayPal to pay.
               </p>
-            </form>
+            </div>
           </>
         )}
       </DialogContent>

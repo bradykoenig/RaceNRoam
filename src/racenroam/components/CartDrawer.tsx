@@ -8,7 +8,7 @@ export const CartDrawer = () => {
 
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
-      <SheetContent side="right" className="bg-background border-l border-primary/30 text-foreground w-full sm:max-w-md flex flex-col p-0">
+      <SheetContent side="right" style={{ background: '#111111' }} className="border-l border-primary/30 text-foreground w-full sm:max-w-md flex flex-col p-0">
         <SheetHeader className="p-6 border-b border-grey-mid">
           <SheetTitle className="font-display text-3xl tracking-[4px] text-foreground">YOUR CART</SheetTitle>
           <p className="font-tech text-[10px] tracking-[3px] text-grey-light uppercase">{count} {count === 1 ? "ITEM" : "ITEMS"}</p>
@@ -66,7 +66,10 @@ export const CartDrawer = () => {
             <p className="font-body text-xs text-grey-light">Enter shipping info, then pay with PayPal.</p>
             <button
               onClick={() => { setIsOpen(false); setIsCheckoutOpen(true); }}
-              className="btn-race w-full"
+              style={{ background: '#e63946', color: '#fff', padding: '16px 32px', borderRadius: '0px', fontWeight: 700, border: '3px solid #e63946', transition: 'all 0.2s', cursor: 'pointer', width: '100%', fontSize: '14px', letterSpacing: '0.08em', textTransform: 'uppercase', boxShadow: '0 4px 12px rgba(230, 57, 70, 0.4)' }}
+              className="font-display tracking-wider"
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#d62828', e.currentTarget.style.boxShadow = '0 6px 20px rgba(230, 57, 70, 0.6)', e.currentTarget.style.transform = 'translateY(-2px)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#e63946', e.currentTarget.style.boxShadow = '0 4px 12px rgba(230, 57, 70, 0.4)', e.currentTarget.style.transform = 'translateY(0)')}
             >
               Checkout · ${(total + 8).toFixed(2)}
             </button>
