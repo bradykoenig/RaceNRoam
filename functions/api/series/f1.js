@@ -101,6 +101,7 @@ function jolpicaSchedule(race) {
 /**
  * Generate data-driven race preview from standings and circuit data.
  * Updates automatically after each race.
+ * Returns array of formatted strings.
  */
 function generateRacePreview(drivers, teams, raceName, raceCircuit) {
   if (!drivers?.length || !raceName) return []
@@ -118,43 +119,32 @@ function generateRacePreview(drivers, teams, raceName, raceCircuit) {
   // 1. Top 3 drivers — who's leading
   const top3 = drivers.slice(0, 3)
   if (top3.length > 0) {
-    preview.push({
-      title: 'Championship Leader',
-      content: `${top3[0].driver} (${top3[0].pts} pts) leads ${top3[1]?.driver || 'the field'} by ${Math.round(top3[0].pts - (top3[1]?.pts || 0))} points`,
-    })
+    const pts1 = Math.round(top3[0].pts)
+    const pts2 = Math.round(top3[1]?.pts || 0)
+    const lead = Math.round(pts1 - pts2)
+    preview.push(`${top3[0].driver} leads with ${pts1} pts — ${lead}pt margin over ${top3[1]?.driver || 'second place'}`)
   }
 
   // 2. Constructor standings
-  if (teams?.length > 0) {
-    const lead = Math.round(teams[0].pts - (teams[1]?.pts || 0))
-    preview.push({
-      title: 'Constructor Battle',
-      content: `${teams[0].team} leads constructor championship by ${lead} points`,
-    })
+  if (teams?.length > 0 && teams[0]) {
+    const teamLead = Math.round(teams[0].pts - (teams[1]?.pts || 0))
+    preview.push(`${teams[0].team} leads constructor championship by ${teamLead} points`)
   }
 
   // 3. Circuit characteristics
-  let circuitNote = ''
   if (isStreetCircuit) {
-    circuitNote = 'Street circuit: precision, low overtaking, close racing, tire degradation critical'
+    preview.push(`Street circuit — precision required, low overtaking opportunity, close racing expected`)
   } else if (isHighSpeed) {
-    circuitNote = 'High-speed circuit: power matters, slipstream advantage, fuel efficiency important'
+    preview.push(`High-speed circuit — power matters, slipstream strategy important, fuel management critical`)
   } else {
-    circuitNote = 'Mixed circuit: balanced challenge for teams and drivers'
+    preview.push(`Balanced circuit — good mix of high-speed and technical sections for all team types`)
   }
-  preview.push({
-    title: 'Circuit Profile',
-    content: circuitNote,
-  })
 
   // 4. Midfield battle
   const midfield = drivers.slice(3, 6)
-  if (midfield.length > 0) {
-    const gaps = midfield.map((d, i) => `${d.driver} (${d.pts}pts)`).join(' vs ')
-    preview.push({
-      title: 'Midfield Watch',
-      content: `Close battle: ${gaps} — points available for those outside the top 2`,
-    })
+  if (midfield.length > 1) {
+    const gaps = midfield.map(d => `${d.driver} (${Math.round(d.pts)}pts)`).join(', ')
+    preview.push(`Midfield battle: ${gaps} — points available for strategic advantage`)
   }
 
   return preview
