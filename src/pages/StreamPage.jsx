@@ -259,15 +259,43 @@ function LiveStreamBody({ liveData, series, meta }) {
 }
 
 // ── Idle / Pre-race Layout ────────────────────────────────────
-// Shown when no session is active — countdown, schedule
+// Shown when no session is active — polished pre-session dashboard
 
-function IdleStreamBody({ d, meta, series }) {
+function IdleStreamBody({ d, meta, series, lastFetch }) {
   const race     = d.featuredRace
   const weather  = d.weather
   const schedule = d.schedule || []
 
+  const fmtSchedule = (ts) => {
+    if (!ts) return ''
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+      }).format(new Date(ts))
+    } catch { return '' }
+  }
+
+  // Determine which session to countdown to
+  let countdownSession = null
+  let countdownTarget = race?.date
+  const now = new Date()
+
+  if (race?.nextSession?.startTime) {
+    const nextTime = new Date(race.nextSession.startTime)
+    if (nextTime > now) {
+      countdownTarget = race.nextSession.startTime
+      countdownSession = race.nextSession.session
+    }
+  } else if (race?.raceStart) {
+    countdownTarget = race.raceStart
+  }
+
+  // Find next upcoming session in schedule for highlighting
+  const nextSessionTime = schedule.find(s => new Date(s.startTime) > now)?.startTime
+
   return (
-    <div className="stream-body">
+    <div className="stream-body" style={{ display: 'flex', flexDirection: 'column' }}>
       {/* Race hero + countdown */}
       <div className="stream-hero">
         {race ? (
@@ -287,9 +315,14 @@ function IdleStreamBody({ d, meta, series }) {
                 {weather.rainChance && weather.rainChance !== '0%' ? ` · ${weather.rainChance} rain` : ''}
               </div>
             )}
-            {race.date && (
+            {countdownTarget && (
               <div className="stream-countdown-wrap">
-                <Countdown targetDate={race.date} size="large" />
+                {countdownSession && countdownSession !== 'Race' && (
+                  <div style={{ fontSize:'0.7rem', color:'#666', marginBottom:'var(--sp-2)', fontFamily:'var(--font-display)', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em' }}>
+                    Countdown to {countdownSession}
+                  </div>
+                )}
+                <Countdown targetDate={countdownTarget} size="large" />
               </div>
             )}
           </>
@@ -298,20 +331,126 @@ function IdleStreamBody({ d, meta, series }) {
         )}
       </div>
 
-      {/* Weekend Schedule */}
-      {schedule.length > 0 && (
-        <div className="stream-panels">
-          <div className="stream-panel">
-            <div className="stream-panel-hdr">Weekend Schedule</div>
-            {schedule.slice(0, 5).map((s, i) => (
-              <div key={i} className="stream-tp">
-                <span style={{ fontWeight:700, color:meta.color, marginRight:8 }}>{s.session}</span>
-                {s.startTime ? fmt(s.startTime) : ''}
-              </div>
-            ))}
-          </div>
+      {/* Two-column dashboard: Schedule + Status */}
+      <div className="stream-pre-grid">
+        {/* Left: Weekend Schedule */}
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Weekend Schedule</div>
+          {schedule.length > 0 ? (
+            schedule.map((s, i) => {
+              const isNext = s.startTime === nextSessionTime
+              const isPast = new Date(s.startTime) < now
+              return (
+                <div key={i} className={`stream-sched-row ${isNext ? 'next' : ''}`}>
+                  <div>
+                    <div className="stream-sched-name">{s.session}</div>
+                    <div className="stream-sched-time">{fmtSchedule(s.startTime)}</div>
+                  </div>
+                  <div className={`stream-sched-badge ${isNext ? 'next' : ''}`}>
+                    {isNext ? 'NEXT' : isPast ? 'DONE' : 'UPCOMING'}
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <div style={{ color:'#555', fontSize:'0.8rem' }}>No schedule available</div>
+          )}
         </div>
-      )}
+
+        {/* Right: Session Status */}
+        <div className="stream-pre-card" style={{ display:'flex', flexDirection:'column', justifyContent:'flex-start' }}>
+          <div className="stream-pre-card-hdr">Session Status</div>
+          <div className="stream-status-badge">● No Active Session</div>
+          <p style={{ color:'#666', fontSize:'0.8rem', lineHeight:1.6, marginBottom:'var(--sp-4)' }}>
+            Live timing, leaderboard, gaps, sectors, telemetry, and race control will populate automatically when the session begins.
+          </p>
+          {lastFetch && (
+            <div style={{ color:'#555', fontSize:'0.7rem', fontFamily:'var(--font-mono)', marginTop:'auto' }}>
+              Last check: {fmt(lastFetch)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom row: Race Info + Weather */}
+      <div className="stream-pre-grid" style={{ borderTop:'1px solid #0f0f0f' }}>
+        {/* Race Info */}
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Race Information</div>
+          {race?.round && (
+            <div className="stream-info-row">
+              <div className="stream-info-label">ROUND</div>
+              <div className="stream-info-val">{race.round}</div>
+            </div>
+          )}
+          {(race?.raceStart || race?.date) && (
+            <div className="stream-info-row">
+              <div className="stream-info-label">RACE DATE</div>
+              <div className="stream-info-val">{fmtSchedule(race.raceStart || race.date)}</div>
+            </div>
+          )}
+          {race?.track && race.track !== 'TBD' && (
+            <div className="stream-info-row">
+              <div className="stream-info-label">CIRCUIT</div>
+              <div className="stream-info-val">{race.track}</div>
+            </div>
+          )}
+          {race?.location && race.location !== 'TBD' && (
+            <div className="stream-info-row">
+              <div className="stream-info-label">LOCATION</div>
+              <div className="stream-info-val">{race.location}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Track Weather */}
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Track Weather</div>
+          {weather ? (
+            <>
+              {weather.temperature != null && (
+                <div className="stream-info-row">
+                  <div className="stream-info-label">TEMP</div>
+                  <div className="stream-info-val">{Math.round(weather.temperature)}°C / {cToF(weather.temperature)}°F</div>
+                </div>
+              )}
+              {weather.conditions && (
+                <div className="stream-info-row">
+                  <div className="stream-info-label">CONDITIONS</div>
+                  <div className="stream-info-val">{weather.conditions}</div>
+                </div>
+              )}
+              {weather.windSpeed && (
+                <div className="stream-info-row">
+                  <div className="stream-info-label">WIND</div>
+                  <div className="stream-info-val">{weather.windSpeed} {weather.windDir || ''}</div>
+                </div>
+              )}
+              {weather.rainChance && weather.rainChance !== '0%' && (
+                <div className="stream-info-row">
+                  <div className="stream-info-label">RAIN</div>
+                  <div className="stream-info-val">{weather.rainChance}</div>
+                </div>
+              )}
+              {weather.humidity && (
+                <div className="stream-info-row">
+                  <div className="stream-info-label">HUMIDITY</div>
+                  <div className="stream-info-val">{weather.humidity}</div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ color:'#555', fontSize:'0.8rem' }}>No weather data available</div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom: No Active Session message */}
+      <div className="stream-no-session-msg">
+        <p>
+          No active F1 session right now. Live timing, gaps, sectors, telemetry, race control, and track status will populate automatically when the session begins. Check back when FP1 or race session starts.
+        </p>
+      </div>
     </div>
   )
 }
@@ -373,17 +512,19 @@ export default function StreamPage() {
           </div>
         </div>
       ) : isSessionLive ? (
-        /* ── LIVE MODE: full OpenF1 timing layout ── */
-        <LiveStreamBody liveData={liveData} series={series} meta={meta} />
+        <>
+          {/* ── LIVE MODE: full OpenF1 timing layout ── */}
+          <LiveStreamBody liveData={liveData} series={series} meta={meta} />
+          {/* ── Real-time hub (OpenF1 HTTP polling via Cloudflare) — F1 only ── */}
+          {series === 'f1' && (
+            <div style={{ marginTop: 24 }}>
+              <LiveRaceHub seriesData={d} />
+            </div>
+          )}
+        </>
       ) : (
-        /* ── IDLE MODE: countdown + standings + talking points ── */
-        <IdleStreamBody d={d} meta={meta} series={series} />
-      )}
-      {/* ── Real-time hub (OpenF1 HTTP polling via Cloudflare) — F1 only ── */}
-      {series === 'f1' && (
-        <div style={{ marginTop: 24 }}>
-          <LiveRaceHub seriesData={d} />
-        </div>
+        /* ── IDLE MODE: polished pre-session dashboard ── */
+        <IdleStreamBody d={d} meta={meta} series={series} lastFetch={lastFetch} />
       )}
 
       <div className="stream-footer">
