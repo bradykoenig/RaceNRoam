@@ -37,7 +37,17 @@ export async function onRequestGet({ env }) {
     let teams    = constructorStandings.status === 'fulfilled' ? constructorStandings.value : []
     const of1    = openF1.status === 'fulfilled' ? openF1.value : null
 
-    // Fallback to Ergast if Jolpica fails
+    // Validate Jolpica data is from current season
+    const currentYear = new Date().getFullYear()
+    const raceYear = race?.date ? new Date(race.date).getFullYear() : null
+    const isOldData = raceYear && raceYear < currentYear - 1
+
+    if (isOldData) {
+      console.log(`Jolpica returned old data (${raceYear}), skipping...`)
+      race = null
+    }
+
+    // Fallback to Ergast if Jolpica fails or has old data
     if (!race || !drivers.length || !teams.length) {
       console.log('Falling back to Ergast API...')
       if (!race) race = await getErgastNextRace()
