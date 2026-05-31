@@ -261,7 +261,7 @@ export async function onRequestGet({ env }) {
     }
     if (!weather) weather = getFallbackWeather(raceCircuit || '')
 
-    // ── 5b. Fallback: if raceStart is still null, extract from schedule ──────
+    // ── 5b. Fallback: extract raceStart and nextSession from schedule ────────
     if (!raceStart && schedule.length > 0) {
       const raceSession = schedule.find(s =>
         s.session?.toLowerCase() === 'race' ||
@@ -270,6 +270,15 @@ export async function onRequestGet({ env }) {
       if (raceSession?.startTime) {
         raceStart = raceSession.startTime
         console.log(`[f1] Extracted race start from schedule: ${raceStart}`)
+      }
+    }
+
+    // Always set nextSession if not already set — first future session
+    if (!nextSession && schedule.length > 0) {
+      const now = new Date()
+      nextSession = schedule.find(s => new Date(s.startTime) > now) || null
+      if (nextSession) {
+        console.log(`[f1] Extracted next session from schedule: ${nextSession.session}`)
       }
     }
 
