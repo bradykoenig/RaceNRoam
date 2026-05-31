@@ -5,7 +5,6 @@ import Countdown from './Countdown'
 import TrackInfoCard from './TrackInfoCard'
 import WeatherCard from './WeatherCard'
 import ScheduleCard from './ScheduleCard'
-import StandingsTable from './StandingsTable'
 import OfficialLinks from './OfficialLinks'
 import LoadingState from './LoadingState'
 import ErrorState from './ErrorState'
@@ -22,16 +21,25 @@ export default function SeriesPage({ series, data, loading, error, onRefresh }) 
   const race      = d.featuredRace
   const track     = d.track
   const schedule  = d.schedule || []
-  const standings = d.standings || {}
   const weather   = d.weather
   const links     = d.officialLinks  || []
   const classes   = d.classes
 
+  // Build proper race subtitle from API data
+  function getRaceSubtitle() {
+    if (!race) return '2026 Season'
+    const parts = []
+    if (race.track) parts.push(race.track)
+    if (race.location) parts.push(race.location)
+    if (race.round) parts.push(`Round ${race.round}`)
+    return parts.length > 0 ? parts.join(' · ') : race.name
+  }
+
   return (
     <div className="container page-wrapper fade-in">
       <PageHeader
-        title={d.seriesName || data.seriesName}
-        subtitle={race?.name ? `Next: ${race.name}` : '2026 Season'}
+        title={race?.name || d.seriesName || data.seriesName}
+        subtitle={getRaceSubtitle()}
         series={series}
         source={data.source}
         warning={data.warning}
@@ -161,34 +169,6 @@ export default function SeriesPage({ series, data, loading, error, onRefresh }) 
           </div>
         )}
       </div>
-
-      {/* Driver Standings */}
-      {standings.drivers?.length > 0 && (
-        <section className="section">
-          <p className="section-title">Championship Standings</p>
-          <div className="card">
-            <div className="card-header">
-              <h4>Driver / Rider Standings</h4>
-              <span className="badge badge-upcoming">2026 Season</span>
-            </div>
-            <div className="card-body" style={{ padding: 0 }}>
-              <StandingsTable drivers={standings.drivers} type="drivers" limit={10} />
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Constructor / Team Standings */}
-      {standings.teams?.length > 0 && (
-        <section className="section">
-          <p className="section-title">Constructor / Team Standings</p>
-          <div className="card">
-            <div className="card-body" style={{ padding: 0 }}>
-              <StandingsTable teams={standings.teams} type="teams" limit={10} />
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* Official Links */}
       {links.length > 0 && (
