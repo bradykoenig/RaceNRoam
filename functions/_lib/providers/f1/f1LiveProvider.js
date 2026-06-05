@@ -323,6 +323,11 @@ export async function getF1LiveData() {
     if (segMsg) sessionSegment = segMsg.message
   }
 
+  // -- Current lap number (race only) --
+  // Position records don't include lap; derive from the laps endpoint instead.
+  const lapNumbers = isRace ? allLaps.map(l => l.lap_number).filter(n => n > 0) : []
+  const currentLap = lapNumbers.length > 0 ? Math.max(...lapNumbers) : null
+
   return {
     // ── Spec-required metadata ────────────────────────────────
     ok:             true,
@@ -344,7 +349,7 @@ export async function getF1LiveData() {
       country:   session.country_name,
       dateStart: session.date_start,
       dateEnd:   session.date_end,
-      lap:       isRace ? (Math.max(...latestPos.map(p => p.lap ?? 0).filter(Boolean)) || null) : null,
+      lap:       currentLap,
       totalLaps: isRace ? session.total_laps || null : null,
     },
     // ── Timing data ───────────────────────────────────────────
