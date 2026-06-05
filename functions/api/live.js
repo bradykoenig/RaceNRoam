@@ -93,6 +93,34 @@ async function getSessions(meetingKey) {
   return (rows || []).sort((a, b) => new Date(a.date_start) - new Date(b.date_start))
 }
 
+// Build synthetic sessions from Jolpica race object when OpenF1 has no 2026 data yet.
+// Jolpica/Ergast includes FirstPractice, SecondPractice, ThirdPractice, Qualifying, Sprint times.
+function buildJolpicaSessions(race) {
+  function add(name, type, date, time, durationHours) {
+    if (!date || !time) return null
+    const iso = `${date}T${time}`
+    const ms  = new Date(iso).getTime()
+    if (isNaN(ms)) return null
+    return {
+      session_key:  null,
+      meeting_key:  null,
+      session_name: name,
+      session_type: type,
+      date_start:   iso,
+      date_end:     new Date(ms + durationHours * 3_600_000).toISOString(),
+    }
+  }
+  return [
+    add('Practice 1',        'Practice',   race.FirstPractice?.date,    race.FirstPractice?.time,    1),
+    add('Practice 2',        'Practice',   race.SecondPractice?.date,   race.SecondPractice?.time,   1),
+    add('Sprint Qualifying', 'Qualifying', race.SprintQualifying?.date, race.SprintQualifying?.time, 0.5),
+    add('Sprint',            'Race',       race.Sprint?.date,           race.Sprint?.time,           0.5),
+    add('Practice 3',        'Practice',   race.ThirdPractice?.date,    race.ThirdPractice?.time,    1),
+    add('Qualifying',        'Qualifying', race.Qualifying?.date,       race.Qualifying?.time,       1),
+    add('Race',              'Race',       race.date,                   race.time || '13:00:00Z',    2),
+  ].filter(Boolean).sort((a, b) => new Date(a.date_start) - new Date(b.date_start))
+}
+
 // ── Mode determination ────────────────────────────────────────────────────────
 
 function determineMode(sessions) {
@@ -344,14 +372,37 @@ async function handleF1() {
       return jsonRes(p)
     }
 
-    // 2. OpenF1 meeting + sessions
+    // 2. OpenF1 meeting + sessions (three-tier fallback)
     let sessions = []
     try {
+      // Tier 1: meeting_key lookup
       const meeting = await findMeeting(race)
       if (meeting) sessions = await getSessions(meeting.meeting_key)
-      else warnings.push('No matching OpenF1 meeting found — schedule data may be limited')
+
+      // Tier 2: year-wide sessions query filtered by proximity to race date
+      if (!sessions.length) {
+        try {
+          const year     = new Date(race.date).getFullYear()
+          const yearRows = await of1(`/sessions?year=${year}`, 60)
+          if (yearRows?.length) {
+            const raceMs = new Date(race.date).getTime()
+            sessions = yearRows
+              .filter(s => Math.abs(new Date(s.date_start).getTime() - raceMs) < 8 * 86_400_000)
+              .sort((a, b) => new Date(a.date_start) - new Date(b.date_start))
+          }
+        } catch {}
+      }
+
+      // Tier 3: build from Jolpica race data (FirstPractice / SecondPractice / etc.)
+      if (!sessions.length) {
+        sessions = buildJolpicaSessions(race)
+        warnings.push(sessions.length
+          ? 'OpenF1 has no session registry for this event — schedule from Jolpica calendar'
+          : 'No session data available from OpenF1 or Jolpica')
+      }
     } catch (err) {
       warnings.push(`OpenF1 sessions unavailable: ${err.message}`)
+      sessions = buildJolpicaSessions(race)
     }
 
     // 3. Mode
@@ -405,11 +456,14 @@ async function handleF1() {
     } : null
 
     // 6. Live data — fetch for active OR latest completed session
+    // When sessions came from Jolpica (session_key=null), fall back to OpenF1 'latest'
     let liveData = {}
-    const liveKey = activeSession?.session_key ?? (mode === 'post_session' ? latestSession?.session_key : null)
-    if (liveKey) {
+    const explicitKey = activeSession?.session_key ?? (mode === 'post_session' ? latestSession?.session_key : null)
+    const needsLive   = mode === 'best_effort_live' || mode === 'post_session'
+    const fetchKey    = explicitKey ?? (needsLive ? 'latest' : null)
+    if (fetchKey) {
       try {
-        liveData = await fetchLiveData(liveKey)
+        liveData = await fetchLiveData(fetchKey)
       } catch (err) {
         warnings.push(`Live timing unavailable: ${err.message}`)
       }

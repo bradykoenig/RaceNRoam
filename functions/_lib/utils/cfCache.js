@@ -79,7 +79,10 @@ export async function cachedFetch(url, options = {}, ttlSeconds = 30) {
     },
   })
 
-  if (cache) {
+  // Don't cache empty arrays — they may be transient API gaps (e.g. OpenF1 missing year data)
+  const trimmed = body.trim()
+  const isEmptyArray = trimmed === '[]'
+  if (cache && !isEmptyArray) {
     await cache.put(cacheKey, toCache.clone()).catch(() => {})
   }
 
