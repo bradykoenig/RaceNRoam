@@ -15,10 +15,11 @@ import { getNascarLiveData }      from '../_lib/providers/nascar/nascarLiveProvi
 
 const CORS = { 'Access-Control-Allow-Origin': '*' }
 
-// Cache the entire normalized response for 10s so many simultaneous viewers
+// Cache the entire normalized response for 3s so many simultaneous viewers
 // share one real OpenF1 call instead of each triggering their own.
+// 3s matches the tightest per-endpoint TTL so no extra staleness is added.
 const FULL_RESPONSE_CACHE_KEY = 'https://racenroam.com/__live_f1_payload'
-const FULL_RESPONSE_TTL_S     = 10
+const FULL_RESPONSE_TTL_S     = 3
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {

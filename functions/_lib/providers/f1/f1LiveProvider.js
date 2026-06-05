@@ -6,19 +6,21 @@ import { cachedFetchJson } from '../../utils/cfCache.js'
 
 const BASE = 'https://api.openf1.org/v1'
 
-// Per-endpoint cache TTLs — match spec exactly
+// Per-endpoint cache TTLs — minimized for real-time feel while staying free
+// OpenF1 updates positions/intervals/car_data at 3-4 Hz; cache just long enough
+// to absorb a burst of concurrent users without hammering OpenF1.
 const CACHE_TTL = {
   sessions:      60,
-  position:      10,
-  intervals:     10,
-  car_data:       5,
-  track_status:   5,
-  race_control:  10,   // spec: 10s
-  weather:       20,
-  drivers:      300,
-  laps:          15,
-  stints:        60,
-  location:       8,
+  position:       2,   // position changes every corner
+  intervals:      2,   // gap data changes every few seconds
+  car_data:       2,   // 3.7 Hz source; 2s cache is a reasonable tradeoff
+  track_status:   2,   // safety car / red flag must be near-instant
+  race_control:   4,   // flag messages; 4s is fine
+  weather:       15,   // changes slowly
+  drivers:      300,   // static for the session
+  laps:           4,   // sector times per completed lap
+  stints:        20,   // tyre changes are rare
+  location:       2,   // car X/Y for track map
 }
 
 async function get(path, params = {}) {

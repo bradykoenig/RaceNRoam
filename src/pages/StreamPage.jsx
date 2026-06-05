@@ -157,19 +157,6 @@ function LiveStreamBody({ liveData, series, meta }) {
         </div>
 
         <div style={{ display:'flex', alignItems:'center', gap:'var(--sp-5)' }}>
-          {/* Flag state */}
-          {session?.flag && flagColor && (
-            <span style={{
-              fontFamily:'var(--font-display)', fontSize:'0.72rem', fontWeight:900,
-              textTransform:'uppercase', letterSpacing:'0.1em', color: flagColor,
-              padding:'3px 10px', borderRadius:'2px',
-              border:`1px solid ${flagColor}44`, background:`${flagColor}12`,
-              animation: 'pulseLive 1.6s ease-in-out infinite',
-            }}>
-              {session.flag === 'sc' ? 'SAFETY CAR' : session.flag === 'vsc' ? 'VSC' : session.flag.toUpperCase()}
-            </span>
-          )}
-
           {/* Weather */}
           {weather && (
             <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color:'#555' }}>
@@ -550,7 +537,7 @@ export default function StreamPage() {
         </span>
         <span className="stream-footer-text">
           {isSessionLive
-            ? '● Live via OpenF1 · updates every 20s'
+            ? '● Live via OpenF1 · updates every ~5s'
             : `Auto-refresh every ${REFRESH_MS / 1000}s${lastFetch ? ` · Last: ${fmt(lastFetch)}` : ''}`}
         </span>
       </div>

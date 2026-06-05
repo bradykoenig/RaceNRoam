@@ -11,9 +11,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getDriver, STREAMED_SESSIONS } from '../data/driverBranding'
 
-const POLL_MS        = 12_000   // edge cache refreshes every 10s; 12s catches it promptly
-const STALE_WARN_MS  = 60_000   // warn after 1 minute of no new data
-const STALE_ERROR_MS = 120_000  // error after 2 minutes
+const POLL_MS        =  6_000   // edge cache TTLs now 2-4s; 6s catches fresh data reliably
+const STALE_WARN_MS  = 20_000   // warn after 20s of no new data (matches tighter polling)
+const STALE_ERROR_MS = 60_000   // error after 1 minute
 
 // ── Countdown hook ────────────────────────────────────────────────────────────
 

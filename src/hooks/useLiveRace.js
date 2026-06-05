@@ -2,9 +2,9 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { getLiveData } from '../lib/api/client.js'
 
 // Polls /api/live — adaptive delay based on live state
-// Live:     15s (edge cache refreshes every 10s, OpenF1 data ~30s delayed total)
+// Live:     5s  (cache TTLs are now 2-4s, so 5s catches fresh data promptly)
 // Pre/post: 60s (session schedule doesn't change that fast)
-const LIVE_MS    = 15_000
+const LIVE_MS    =  5_000
 const IDLE_MS    = 60_000
 
 export function useLiveRace(series, enabled = true) {
@@ -29,9 +29,6 @@ export function useLiveRace(series, enabled = true) {
 
     let cancelled = false
 
-    // Recursive setTimeout so each tick re-reads the current live state
-    // before scheduling the next one — unlike setInterval which fixes the
-    // delay at mount time and never adapts.
     const schedule = () => {
       if (cancelled) return
       const delay = isLiveRef.current ? LIVE_MS : IDLE_MS
@@ -41,12 +38,22 @@ export function useLiveRace(series, enabled = true) {
       }, delay)
     }
 
-    // Initial fetch then start the adaptive loop
+    // Immediately refetch when the tab becomes visible — avoids stale data
+    // after a streamer alt-tabs away and comes back mid-session.
+    const onVisible = () => {
+      if (!document.hidden && isLiveRef.current) {
+        clearTimeout(timerRef.current)
+        if (!cancelled) doFetch().then(schedule)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
     doFetch().then(schedule)
 
     return () => {
       cancelled = true
       clearTimeout(timerRef.current)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [doFetch, enabled])
 
