@@ -5,7 +5,7 @@ import { getLiveData } from '../lib/api/client.js'
 // Live:     5s  (cache TTLs are now 2-4s, so 5s catches fresh data promptly)
 // Pre/post: 60s (session schedule doesn't change that fast)
 const LIVE_MS    =  5_000
-const IDLE_MS    = 60_000
+const IDLE_MS    = 30_000  // 30s catches session transitions within half a minute
 
 export function useLiveRace(series, enabled = true) {
   const [data,    setData]    = useState(null)
