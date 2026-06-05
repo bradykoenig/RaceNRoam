@@ -227,28 +227,28 @@ export async function onRequestGet({ env }) {
           of1Location = meeting.location || null
 
           if (jolpicaRace) {
-            // Jolpica already gave us the race date — use OpenF1 only to:
-            // a) get more precise session times if available
-            // b) add Sprint Qualifying if present
-            // c) confirm raceSession exists
+            // Jolpica is authoritative — use its schedule and race date always.
+            // OpenF1 supplements with Sprint Qualifying sessions not in Jolpica,
+            // but never replaces Jolpica session times.
             if (parsed.raceSession && isCurrentYear(parsed.raceSession.date_start)) {
-              // Use OpenF1 race session time only if it's on the same day as Jolpica's race date
-              const of1RaceDay   = new Date(parsed.raceSession.date_start).toDateString()
-              const jolRaceDay   = new Date(raceStart).toDateString()
-              if (of1RaceDay === jolRaceDay) {
-                raceStart = parsed.raceSession.date_start  // more precise time from OpenF1
+              // Only confirm race is on same day — do NOT override Jolpica race time
+              const of1RaceDay = new Date(parsed.raceSession.date_start).toDateString()
+              const jolRaceDay = new Date(raceStart).toDateString()
+              if (of1RaceDay !== jolRaceDay) {
+                console.warn('[f1] OpenF1 race day mismatch vs Jolpica — keeping Jolpica raceStart')
               }
             }
 
-            // Prefer OpenF1 schedule if it has more sessions (e.g. Sprint Quali)
-            if (parsed.schedule.length > schedule.length) {
-              // Keep Jolpica race date but use OpenF1 session times
-              schedule = parsed.schedule
+            // Add Sprint Qualifying from OpenF1 if Jolpica didn't include it
+            const hasSQ = schedule.some(s => s.session.toLowerCase().includes('sprint qual'))
+            if (!hasSQ) {
+              const sqSession = parsed.schedule.find(s => s.session.toLowerCase().includes('sprint qual'))
+              if (sqSession) schedule.splice(schedule.length - 2, 0, sqSession)
             }
 
-            // Update nextSession from OpenF1's perspective
+            // Update nextSession using Jolpica schedule only
             const now = new Date()
-            nextSession = parsed.schedule.find(s => new Date(s.startTime) > now) ?? nextSession
+            nextSession = schedule.find(s => new Date(s.startTime) > now) ?? nextSession
           } else {
             // Jolpica failed — use OpenF1 entirely, but still find race session correctly
             if (parsed.raceSession && isCurrentYear(parsed.raceSession.date_start)) {
@@ -306,7 +306,7 @@ export async function onRequestGet({ env }) {
       return buildFallbackResponse(fb, 'f1', 'No F1 data from Jolpica, OpenF1, or ESPN')
     }
 
-    // Use fallback schedule if we still have nothing
+    // If no schedule from live APIs, use fallback (now has correct Monaco UTC times)
     if (!schedule.length) schedule = fb.schedule
 
     // ── 4. Standings (Jolpica ONLY — no fake fallback) ────────────────────────
