@@ -69,7 +69,8 @@ export async function getF1LiveData() {
   const now   = Date.now()
   const start = new Date(session.date_start).getTime()
   const end   = new Date(session.date_end).getTime()
-  const isLive = now >= start && now <= end
+  // 10-minute grace period handles sessions that run slightly over scheduled end
+  const isLive = now >= start && now <= end + 10 * 60 * 1000
 
   const sessionKey = session.session_key
   const category   = getSessionCategory(session)
