@@ -18,8 +18,11 @@ export function useLiveRace(series, enabled = true) {
     setLoading(true)
     try {
       const result = await getLiveData(series)
-      setData(result)
-      isLiveRef.current = result?.mode === 'live' || result?.mode === 'best_effort_live' || !!result?.isLive
+      // Only replace data if we got a valid response — preserves last-good state on API blips
+      if (result != null) {
+        setData(result)
+        isLiveRef.current = result?.mode === 'live' || result?.mode === 'best_effort_live' || !!result?.isLive
+      }
     } catch { /* silently fail — keep last known data */ }
     finally { setLoading(false) }
   }, [series, enabled])
