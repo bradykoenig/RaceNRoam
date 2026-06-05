@@ -85,19 +85,36 @@ function StreamTopbar({ series, meta, refreshing, lastFetch, onRefresh }) {
 // ── Live Race Layout ──────────────────────────────────────────
 // Shown when a session is actively running (isLive = true)
 
+const TRACK_STATUS_BANNER = {
+  yellow:  { bg: '#f5c51822', border: '#f5c518', text: '#f5c518' },
+  red:     { bg: '#e8002d22', border: '#e8002d', text: '#e8002d' },
+  sc:      { bg: '#f9731622', border: '#f97316', text: '#f97316' },
+  vsc:     { bg: '#f9731622', border: '#f97316', text: '#f97316' },
+}
+
 function LiveStreamBody({ liveData, series, meta }) {
-  const { session, positions = [], locations = [], raceControl = [], weather } = liveData
+  const { session, positions = [], locations = [], raceControl = [], weather, trackStatus } = liveData
   const isRace = session?.category === 'race' || session?.category === 'sprint'
   const isQual = session?.category === 'qualifying' || session?.category === 'sprint-qualifying'
 
-  const FLAG_COLOR = {
-    green:'#22c55e', yellow:'#f59e0b', red:'#ef4444',
-    sc:'#f59e0b', vsc:'#f59e0b', checkered:'#fff', white:'#fff',
-  }
-  const flagColor = FLAG_COLOR[session?.flag] || null
+  const tsStyle = TRACK_STATUS_BANNER[trackStatus?.type]
 
   return (
     <div className="stream-body" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+
+      {/* Track status banner — shown for yellow/red/SC/VSC only */}
+      {tsStyle && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+          padding: '7px 24px', background: tsStyle.bg, borderBottom: `2px solid ${tsStyle.border}`,
+          animation: trackStatus.type === 'red' ? 'pulseLive 1s step-start infinite' : 'none',
+        }}>
+          <span style={{ fontSize: 14, color: tsStyle.text }}>⚑</span>
+          <span style={{ color: tsStyle.text, fontWeight: 900, fontSize: '0.82rem', fontFamily: 'var(--font-display)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+            {trackStatus.label}
+          </span>
+        </div>
+      )}
 
       {/* Session header bar */}
       <div style={{
@@ -197,7 +214,7 @@ function LiveStreamBody({ liveData, series, meta }) {
             borderBottom:'1px solid #0f0f0f',
           }}>
             <span>P</span><span/><span>Driver</span>
-            <span style={{textAlign:'right'}}>{isRace ? 'GAP' : 'BEST LAP'}</span>
+            <span style={{textAlign:'right'}}>{isRace ? 'GAP' : isQual ? 'GAP' : 'BEST LAP'}</span>
           </div>
 
           {/* Rows */}
@@ -241,10 +258,10 @@ function LiveStreamBody({ liveData, series, meta }) {
 
                 {/* Gap / lap time */}
                 <div style={{ textAlign:'right' }}>
-                  {isRace ? (
+                  {(isRace || isQual) ? (
                     p.pos === 1
                       ? <span style={{ fontFamily:'var(--font-display)', fontSize:'0.62rem', fontWeight:900, color:'var(--red)', textTransform:'uppercase', letterSpacing:'0.08em' }}>LEADER</span>
-                      : <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.75rem', color:'#aaa' }}>{p.gap || '—'}s</span>
+                      : <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.75rem', color:'#aaa' }}>{p.gap || '—'}</span>
                   ) : (
                     <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.75rem', color:p.pos===1?'#f59e0b':'#aaa' }}>{p.fastestLap || '—'}</span>
                   )}

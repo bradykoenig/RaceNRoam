@@ -77,7 +77,8 @@ export async function getF1LiveData() {
   const isQual     = category === 'qualifying' || category === 'sprint-qualifying'
   const isPractice = category === 'practice'
 
-  // 2. Fetch all endpoints in parallel
+  // 2. Fetch all endpoints in parallel (including location for track map)
+  const locSince = new Date(Date.now() - 15000).toISOString().replace('Z', '+00:00')
   const requests = {
     positions:   get('/position',      { session_key: sessionKey }),
     intervals:   get('/intervals',     { session_key: sessionKey }),
@@ -88,10 +89,11 @@ export async function getF1LiveData() {
     stints:      get('/stints',        { session_key: sessionKey }),
     carData:     get('/car_data',      { session_key: sessionKey }),
     trackStatus: get('/track_status',  { session_key: sessionKey }),
+    location:    get('/location',      { session_key: sessionKey, date: `>=${locSince}` }),
   }
 
   const results = await Promise.allSettled(Object.values(requests))
-  const [posR, intR, rcR, wxR, drvR, lapR, stintR, carDataR, trackStatusR] = results
+  const [posR, intR, rcR, wxR, drvR, lapR, stintR, carDataR, trackStatusR, locR] = results
 
   // Driver lookup
   const drivers = {}
@@ -148,8 +150,9 @@ export async function getF1LiveData() {
     }
   }
 
-  // -- Gaps/intervals (race + sprint) --
-  if (isRace) {
+  // -- Gaps/intervals — applies to ALL session types (race, qualifying, practice)
+  // OpenF1 provides gap_to_leader based on best lap for quali/practice, race gap for race
+  {
     const latestInt = latestPerDriver(intR.value)
     const intMap    = Object.fromEntries(latestInt.map(i => [i.driver_number, i]))
     for (const p of positions) {
@@ -218,6 +221,12 @@ export async function getF1LiveData() {
       brake:    c.brake,
       drs:      c.drs >= 8,   // DRS open when value >= 8
     }
+  }
+
+  // -- Pit detection: speed < 30 km/h = in pit lane / pit box --
+  for (const p of positions) {
+    const tel = telemetryMap[p.number]
+    p.inPit = tel?.speed != null && tel.speed < 30
   }
 
   // -- Sector times + colors per driver --
@@ -336,9 +345,10 @@ export async function getF1LiveData() {
       totalLaps: isRace ? session.total_laps || null : null,
     },
     // ── Timing data ───────────────────────────────────────────
-    positions,       // includes .sectors, .telemetry, .gap, .interval, .compound, .tyreAge
+    positions,       // includes .sectors, .telemetry, .gap, .interval, .compound, .tyreAge, .inPit
     raceControl: allRC,
     weather,
+    locations: latestPerDriver(locR.value || []),  // real X/Y coords for track map
   }
 }
 
