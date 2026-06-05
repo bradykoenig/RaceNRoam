@@ -4,6 +4,7 @@ import { getSeries } from '../lib/api/client'
 import { SERIES_META } from '../lib/api/endpoints'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
 import { useLiveRace } from '../hooks/useLiveRace'
+import { useF1TimingClient } from '../hooks/useF1TimingClient'
 import Countdown from '../components/Countdown'
 import LiveRacePanel from '../components/LiveRacePanel'
 import RaceControlFeed from '../components/RaceControlFeed'
@@ -486,9 +487,21 @@ export default function StreamPage() {
   useEffect(() => { loadSeries() }, [loadSeries])
   useAutoRefresh(loadSeries, REFRESH_MS, true)
 
-  // Live race data (OpenF1 for F1, NASCAR live feed for NASCAR)
+  // Live race data (server-side provider chain)
   const { liveData, refetchLive } = useLiveRace(series)
   const isSessionLive = !!liveData?.isLive
+
+  // Client-side F1 timing fallback — uses the browser's residential IP when
+  // the server can't access livetiming.formula1.com (datacenter IP blocked).
+  const clientTiming = useF1TimingClient(
+    liveData?._sessionPaths,
+    liveData?.isLive && liveData?._timingUnavailable
+  )
+
+  // Merge client timing into liveData when the server can't supply it
+  const effectiveLiveData = (liveData?._timingUnavailable && clientTiming)
+    ? { ...liveData, ...clientTiming, _clientTimingActive: true }
+    : liveData
 
   function handleRefresh() {
     setRefreshing(true)
@@ -517,8 +530,8 @@ export default function StreamPage() {
         </div>
       ) : isSessionLive ? (
         <>
-          {/* ── LIVE MODE: full OpenF1 timing layout ── */}
-          <LiveStreamBody liveData={liveData} series={series} meta={meta} />
+          {/* ── LIVE MODE: full timing layout (server or client-side fallback) ── */}
+          <LiveStreamBody liveData={effectiveLiveData} series={series} meta={meta} />
           {/* ── Real-time hub (OpenF1 HTTP polling via Cloudflare) — F1 only ── */}
           {series === 'f1' && (
             <div style={{ marginTop: 24 }}>
@@ -537,7 +550,9 @@ export default function StreamPage() {
         </span>
         <span className="stream-footer-text">
           {isSessionLive
-            ? '● Live via OpenF1 · updates every ~5s'
+            ? effectiveLiveData?._clientTimingActive
+              ? '● Live via F1 Timing (direct) · updates every ~3s'
+              : '● Live via F1 Timing · updates every ~5s'
             : `Auto-refresh every ${REFRESH_MS / 1000}s${lastFetch ? ` · Last: ${fmt(lastFetch)}` : ''}`}
         </span>
       </div>

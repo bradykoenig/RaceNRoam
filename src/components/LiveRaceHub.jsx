@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getDriver, STREAMED_SESSIONS } from '../data/driverBranding'
+import { useF1TimingClient } from '../hooks/useF1TimingClient'
 
 const POLL_MS        =  6_000   // edge cache TTLs now 2-4s; 6s catches fresh data reliably
 const STALE_WARN_MS  = 20_000   // warn after 20s of no new data (matches tighter polling)
@@ -405,16 +406,31 @@ export default function LiveRaceHub({ seriesData }) {
     return () => clearInterval(timerRef.current)
   }, [poll])
 
-  // Derived state
-  const isLive     = livePayload?.isLive    ?? false
-  const positions  = livePayload?.positions ?? []
-  const rc         = livePayload?.raceControl ?? []
-  const trackSt    = livePayload?.trackStatus
-  const weather    = livePayload?.weather
-  const session    = livePayload?.session
-  const category   = livePayload?.category  ?? ''
-  const mode       = livePayload?.mode
-  const isStale    = livePayload?._stale    ?? false
+  // Client-side F1 timing fallback — browser has a residential IP
+  const timingUnavailable = livePayload?._timingUnavailable ?? false
+  const clientTiming = useF1TimingClient(
+    livePayload?._sessionPaths,
+    (livePayload?.isLive ?? false) && timingUnavailable
+  )
+
+  // Derived state — prefer client timing when server timing is unavailable
+  const isLive    = livePayload?.isLive ?? false
+  const positions = (timingUnavailable && clientTiming?.positions?.length)
+    ? clientTiming.positions
+    : livePayload?.positions ?? []
+  const rc        = (timingUnavailable && clientTiming?.raceControl)
+    ? clientTiming.raceControl
+    : livePayload?.raceControl ?? []
+  const trackSt   = (timingUnavailable && clientTiming?.trackStatus)
+    ? clientTiming.trackStatus
+    : livePayload?.trackStatus
+  const weather   = (timingUnavailable && clientTiming?.weather)
+    ? clientTiming.weather
+    : livePayload?.weather
+  const session   = livePayload?.session
+  const category  = livePayload?.category ?? ''
+  const mode      = livePayload?.mode
+  const isStale   = livePayload?._stale ?? false
 
   const ageMs      = lastUpdatedAt ? now - lastUpdatedAt : null
   const ageWarn    = ageMs != null && ageMs > STALE_WARN_MS
@@ -495,9 +511,11 @@ export default function LiveRaceHub({ seriesData }) {
             </span>
           )}
 
-          {/* Delay label — always shown */}
+          {/* Source label */}
           <span style={{ fontSize: 9, color: '#2a2a2a', padding: '1px 5px', border: '1px solid #1a1a1a', letterSpacing: '0.06em' }}>
-            Best-effort live timing — usually delayed
+            {timingUnavailable && clientTiming
+              ? 'F1 Timing · direct · ~3s'
+              : 'Best-effort live timing — usually delayed'}
           </span>
 
           {fetchError && (

@@ -263,6 +263,7 @@ export async function getF1TimingLiveData({ schedule, raceDate, raceName, year }
   // All paths failed (server blocked or session not yet in CDN).
   // Return a schedule-aware live shell so the UI shows LIVE state
   // with an empty leaderboard rather than snapping back to idle mode.
+  // _sessionPaths lets the browser retry with a residential IP directly.
   const sn = session.session.toLowerCase()
   return {
     ok:                 true,
@@ -270,6 +271,7 @@ export async function getF1TimingLiveData({ schedule, raceDate, raceName, year }
     mode:               'best_effort_live',
     isLive:             true,
     _timingUnavailable: true,
+    _sessionPaths:      candidates,
     category:           sn.includes('race') ? 'race' : sn.includes('qual') ? 'qualifying' : 'practice',
     trackStatus:        { label: 'ALL CLEAR', color: '#22c55e', type: 'green' },
     session: {
