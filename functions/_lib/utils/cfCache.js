@@ -5,16 +5,17 @@
  * - On 429 (rate limit) or any network error, returns the last stale cached
  *   response so the frontend never receives an error payload
  * - cachedFetchJson always returns parsed JSON or throws with a clear message
+ * - cacheName param lets callers use separate cache namespaces (e.g. authed vs free)
  */
 
-const CACHE_NAME = 'racenroam-openf1-v1'
+const DEFAULT_CACHE = 'racenroam-openf1-v1'
 
-export async function cachedFetch(url, options = {}, ttlSeconds = 30) {
+export async function cachedFetch(url, options = {}, ttlSeconds = 30, cacheName = DEFAULT_CACHE) {
   const cacheKey = new Request(url)
 
   let cache
   try {
-    cache = await caches.open(CACHE_NAME)
+    cache = await caches.open(cacheName)
   } catch {
     // Cloudflare Cache API unavailable (local dev) — fall through to live fetch
   }
@@ -46,17 +47,16 @@ export async function cachedFetch(url, options = {}, ttlSeconds = 30) {
         return stale.clone()
       }
     }
-    throw new Error(`OpenF1 fetch failed: ${fetchErr.message}`)
+    throw new Error(`Fetch failed: ${fetchErr.message}`)
   }
 
   // ── 3. Rate limited — return stale cache or throw ─────────────
   if (response.status === 429) {
-    console.warn(`[cfCache] 429 rate limit on ${url}`)
     if (cache) {
       const stale = await cache.match(cacheKey).catch(() => null)
       if (stale) return stale.clone()
     }
-    throw new Error(`OpenF1 rate limited (429): ${url}`)
+    throw new Error(`Rate limited (429): ${url}`)
   }
 
   // ── 4. Other non-OK response ──────────────────────────────────
@@ -79,17 +79,15 @@ export async function cachedFetch(url, options = {}, ttlSeconds = 30) {
     },
   })
 
-  // Don't cache empty arrays — they may be transient API gaps (e.g. OpenF1 missing year data)
-  const trimmed = body.trim()
-  const isEmptyArray = trimmed === '[]'
-  if (cache && !isEmptyArray) {
+  // Don't cache empty arrays — transient API gaps shouldn't stick for a full TTL
+  if (cache && body.trim() !== '[]') {
     await cache.put(cacheKey, toCache.clone()).catch(() => {})
   }
 
   return toCache
 }
 
-export async function cachedFetchJson(url, options = {}, ttlSeconds = 30) {
-  const res = await cachedFetch(url, options, ttlSeconds)
+export async function cachedFetchJson(url, options = {}, ttlSeconds = 30, cacheName = DEFAULT_CACHE) {
+  const res = await cachedFetch(url, options, ttlSeconds, cacheName)
   return res.json()
 }

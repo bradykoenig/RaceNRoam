@@ -19,7 +19,7 @@ export function useLiveRace(series, enabled = true) {
     try {
       const result = await getLiveData(series)
       setData(result)
-      isLiveRef.current = !!result?.isLive
+      isLiveRef.current = result?.mode === 'live' || result?.mode === 'best_effort_live' || !!result?.isLive
     } catch { /* silently fail — keep last known data */ }
     finally { setLoading(false) }
   }, [series, enabled])

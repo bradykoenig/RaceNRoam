@@ -2,14 +2,18 @@
  * GET /api/live?series=f1|nascar|...
  *
  * F1 state machine — fully automatic, no hardcoded session_key / meeting_key / race data.
- * Sources: Jolpica (schedule) + OpenF1 free REST (timing)
+ * Sources: Jolpica (schedule) + OpenF1 paid real-time API (timing)
  *
- * Modes: pre_session | best_effort_live | post_session | no_active_session | unavailable
+ * Modes: pre_session | live | best_effort_live | post_session | no_active_session | unavailable
+ *
+ * Authentication: OPENF1_USERNAME + OPENF1_PASSWORD in Cloudflare env secrets.
+ * Token is fetched server-side only — never exposed to the browser.
  */
 
-import { cachedFetchJson }   from '../_lib/utils/cfCache.js'
-import { getNascarLiveData } from '../_lib/providers/nascar/nascarLiveProvider.js'
-import { corsOptionsResponse } from '../_lib/utils/apiResponse.js'
+import { cachedFetchJson }      from '../_lib/utils/cfCache.js'
+import { getNascarLiveData }    from '../_lib/providers/nascar/nascarLiveProvider.js'
+import { corsOptionsResponse }  from '../_lib/utils/apiResponse.js'
+import { getOpenF1Token, invalidateToken } from '../_lib/providers/f1/openF1AuthProvider.js'
 
 const CORS = { 'Access-Control-Allow-Origin': '*' }
 
@@ -22,21 +26,21 @@ function jsonRes(body, status = 200) {
 
 // ── Full-response cache ───────────────────────────────────────────────────────
 
-const CACHE_NAME = 'racenroam-live-v3'
-const F1_KEY     = 'https://racenroam.pages.dev/__f1_live_v3'
+const FULL_CACHE_NAME = 'racenroam-live-v4'
+const F1_CACHE_KEY    = 'https://racenroam.pages.dev/__f1_live_v4'
 
 async function getFullCache() {
   try {
-    const c = await caches.open(CACHE_NAME)
-    const h = await c.match(F1_KEY)
+    const c = await caches.open(FULL_CACHE_NAME)
+    const h = await c.match(F1_CACHE_KEY)
     return h ? h.json() : null
   } catch { return null }
 }
 
 async function setFullCache(payload, ttl) {
   try {
-    const c = await caches.open(CACHE_NAME)
-    await c.put(F1_KEY, new Response(JSON.stringify(payload), {
+    const c = await caches.open(FULL_CACHE_NAME)
+    await c.put(F1_CACHE_KEY, new Response(JSON.stringify(payload), {
       headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${ttl}` },
     }))
   } catch {}
@@ -45,8 +49,8 @@ async function setFullCache(payload, ttl) {
 // ── Jolpica ───────────────────────────────────────────────────────────────────
 
 async function getJolpicaRace() {
-  const year  = new Date().getFullYear()
-  const data  = await cachedFetchJson(
+  const year = new Date().getFullYear()
+  const data = await cachedFetchJson(
     `https://api.jolpi.ca/ergast/f1/${year}.json?limit=30`,
     { headers: { Accept: 'application/json' } },
     21600
@@ -55,27 +59,31 @@ async function getJolpicaRace() {
   if (!races?.length) return null
 
   const now = Date.now()
-
   for (const race of races) {
-    const raceMs  = new Date(`${race.date}T${race.time || '13:00:00Z'}`).getTime()
-    const winStart = raceMs - 4 * 86_400_000   // Thu before race
-    const winEnd   = raceMs + 1 * 86_400_000   // day after race
+    const raceMs   = new Date(`${race.date}T${race.time || '13:00:00Z'}`).getTime()
+    const winStart = raceMs - 4 * 86_400_000
+    const winEnd   = raceMs + 1 * 86_400_000
     if (now >= winStart && now <= winEnd) return race
   }
-
-  // Not in a weekend — return next upcoming race
   return races.find(r => new Date(r.date).getTime() >= now - 86_400_000) || races[races.length - 1]
 }
 
-// ── OpenF1 ────────────────────────────────────────────────────────────────────
+// ── OpenF1 request factory ────────────────────────────────────────────────────
+// Returns an of1(path, ttl) function bound to the correct auth headers + cache namespace.
 
-const OF1 = 'https://api.openf1.org/v1'
+const OF1         = 'https://api.openf1.org/v1'
+const AUTHED_CACHE = 'racenroam-openf1-authed-v1'
+const FREE_CACHE   = 'racenroam-openf1-free-v1'
 
-function of1(path, ttl) {
-  return cachedFetchJson(`${OF1}${path}`, {}, ttl)
+function makeOf1(token) {
+  const cacheName = token ? AUTHED_CACHE : FREE_CACHE
+  const headers   = token ? { Authorization: `Bearer ${token}` } : {}
+  return (path, ttl) => cachedFetchJson(`${OF1}${path}`, { headers }, ttl, cacheName)
 }
 
-async function findMeeting(race) {
+// ── OpenF1 session helpers ────────────────────────────────────────────────────
+
+async function findMeeting(race, of1) {
   if (!race?.date) return null
   const year     = new Date(race.date).getFullYear()
   const meetings = await of1(`/meetings?year=${year}`, 3600)
@@ -88,13 +96,13 @@ async function findMeeting(race) {
     .sort((a, b) => a._d - b._d)[0] ?? null
 }
 
-async function getSessions(meetingKey) {
+async function getSessions(meetingKey, of1) {
   const rows = await of1(`/sessions?meeting_key=${meetingKey}`, 60)
   return (rows || []).sort((a, b) => new Date(a.date_start) - new Date(b.date_start))
 }
 
-// Build synthetic sessions from Jolpica race object when OpenF1 has no 2026 data yet.
-// Jolpica/Ergast includes FirstPractice, SecondPractice, ThirdPractice, Qualifying, Sprint times.
+// Build synthetic sessions from Jolpica race data (includes FP1/FP2/FP3/Quali/Sprint times).
+// Used as final fallback when OpenF1 has no session registry for the event.
 function buildJolpicaSessions(race) {
   function add(name, type, date, time, durationHours) {
     if (!date || !time) return null
@@ -134,7 +142,7 @@ function determineMode(sessions) {
     const end   = new Date(s.date_end).getTime()
     return now >= start && now <= end + 15 * 60_000
   })
-  if (active) return { mode: 'best_effort_live', activeSession: active, sessions: sorted }
+  if (active) return { mode: 'active', activeSession: active, sessions: sorted }
 
   const next = sorted.find(s => new Date(s.date_start).getTime() > now)
   if (next) {
@@ -165,7 +173,7 @@ function latestPerDriver(arr, key = 'driver_number') {
 
 function fmtLap(s) {
   if (!s || s <= 0) return null
-  const m = Math.floor(s / 60)
+  const m   = Math.floor(s / 60)
   const sec = (s % 60).toFixed(3).padStart(6, '0')
   return m > 0 ? `${m}:${sec}` : Number(s).toFixed(3)
 }
@@ -184,24 +192,28 @@ const TS_MAP = {
   '7': { label: 'VSC ENDING',         color: '#facc15', type: 'vsc'    },
 }
 
-async function fetchLiveData(sessionKey) {
+async function fetchLiveData(sessionKey, of1, authenticated) {
+  // Tighter TTLs for paid real-time; relaxed for free best-effort
+  const rt = authenticated ? 3 : 5   // real-time endpoints
+  const lt = authenticated ? 5 : 15  // laps
+
   const [posR, intR, lapR, rcR, wxR, carR, stintR, tsR, drvR] = await Promise.allSettled([
-    of1(`/position?session_key=${sessionKey}`,     5),
-    of1(`/intervals?session_key=${sessionKey}`,    10),
-    of1(`/laps?session_key=${sessionKey}`,         15),
-    of1(`/race_control?session_key=${sessionKey}`, 5),
+    of1(`/position?session_key=${sessionKey}`,     rt),
+    of1(`/intervals?session_key=${sessionKey}`,    rt),
+    of1(`/laps?session_key=${sessionKey}`,         lt),
+    of1(`/race_control?session_key=${sessionKey}`, rt),
     of1(`/weather?session_key=${sessionKey}`,      60),
-    of1(`/car_data?session_key=${sessionKey}`,     5),
-    of1(`/stints?session_key=${sessionKey}`,       30),
-    of1(`/track_status?session_key=${sessionKey}`, 5),
+    of1(`/car_data?session_key=${sessionKey}`,     rt),
+    of1(`/stints?session_key=${sessionKey}`,       authenticated ? 20 : 30),
+    of1(`/track_status?session_key=${sessionKey}`, rt),
     of1(`/drivers?session_key=${sessionKey}`,      300),
   ])
 
-  // Drivers
+  // Drivers lookup
   const drivers = {}
   for (const d of drvR.value ?? []) drivers[d.driver_number] = d
 
-  // Leaderboard base (latest position per driver)
+  // Leaderboard base
   const leaderboard = latestPerDriver(posR.value)
     .filter(p => p.position)
     .sort((a, b) => a.position - b.position)
@@ -271,7 +283,7 @@ async function fetchLiveData(sessionKey) {
     }
   }
 
-  // Gaps / intervals
+  // Gaps
   const intMap = Object.fromEntries(
     latestPerDriver(intR.value).map(i => [i.driver_number, i])
   )
@@ -298,7 +310,7 @@ async function fetchLiveData(sessionKey) {
     }
   }
 
-  // Telemetry + pit detection
+  // Telemetry
   const carLatest = latestPerDriver(carR.value)
   for (const p of leaderboard) {
     const c = carLatest.find(x => x.driver_number === p.number)
@@ -334,7 +346,7 @@ async function fetchLiveData(sessionKey) {
     rainfall:  wx.rainfall          ?? false,
   } : null
 
-  const lapNums   = allLaps.map(l => l.lap_number).filter(n => n > 0)
+  const lapNums    = allLaps.map(l => l.lap_number).filter(n => n > 0)
   const currentLap = lapNums.length ? Math.max(...lapNums) : null
 
   return { leaderboard, trackStatus, raceControl, weather, currentLap }
@@ -345,8 +357,8 @@ async function fetchLiveData(sessionKey) {
 function unavailablePayload(generatedAt, reason) {
   return {
     mode: 'unavailable',
-    source: 'OpenF1 free REST via Cloudflare Pages Function',
-    scheduleSource: 'Jolpica', liveSource: 'OpenF1',
+    source: 'OpenF1 real-time API via Cloudflare Pages Function',
+    authenticated: false,
     generatedAt, dataAgeSeconds: null, stale: false,
     warnings: [reason],
     race: null, sessions: [], activeSession: null,
@@ -358,10 +370,22 @@ function unavailablePayload(generatedAt, reason) {
 
 // ── F1 handler ────────────────────────────────────────────────────────────────
 
-async function handleF1() {
+async function handleF1(env) {
   const cached      = await getFullCache()
   const generatedAt = new Date().toISOString()
   const warnings    = []
+
+  // ── Authenticate ──────────────────────────────────────────────────────────
+  let token         = null
+  let authenticated = false
+  try {
+    token         = await getOpenF1Token(env)
+    authenticated = true
+  } catch (authErr) {
+    warnings.push(`OpenF1 auth: ${authErr.message}`)
+  }
+
+  const of1 = makeOf1(token)
 
   try {
     // 1. Race from Jolpica
@@ -372,14 +396,14 @@ async function handleF1() {
       return jsonRes(p)
     }
 
-    // 2. OpenF1 meeting + sessions (three-tier fallback)
+    // 2. OpenF1 sessions — three-tier fallback
     let sessions = []
     try {
       // Tier 1: meeting_key lookup
-      const meeting = await findMeeting(race)
-      if (meeting) sessions = await getSessions(meeting.meeting_key)
+      const meeting = await findMeeting(race, of1)
+      if (meeting) sessions = await getSessions(meeting.meeting_key, of1)
 
-      // Tier 2: year-wide sessions query filtered by proximity to race date
+      // Tier 2: year-wide sessions query
       if (!sessions.length) {
         try {
           const year     = new Date(race.date).getFullYear()
@@ -393,7 +417,7 @@ async function handleF1() {
         } catch {}
       }
 
-      // Tier 3: build from Jolpica race data (FirstPractice / SecondPractice / etc.)
+      // Tier 3: build from Jolpica session times (FirstPractice / SecondPractice / etc.)
       if (!sessions.length) {
         sessions = buildJolpicaSessions(race)
         warnings.push(sessions.length
@@ -401,14 +425,21 @@ async function handleF1() {
           : 'No session data available from OpenF1 or Jolpica')
       }
     } catch (err) {
-      warnings.push(`OpenF1 sessions unavailable: ${err.message}`)
+      // If auth failed on session calls, try invalidating token for next request
+      if (err.message?.includes('401') || err.message?.includes('403')) invalidateToken()
+      warnings.push(`OpenF1 sessions: ${err.message}`)
       sessions = buildJolpicaSessions(race)
     }
 
     // 3. Mode
-    const { mode, activeSession, nextSession, latestSession, sessions: sorted } = determineMode(sessions)
+    const { mode: rawMode, activeSession, nextSession, latestSession, sessions: sorted } = determineMode(sessions)
 
-    // 4. Build race info
+    // Resolve final mode: authenticated live = 'live', unauthenticated = 'best_effort_live'
+    const mode = rawMode === 'active'
+      ? (authenticated ? 'live' : 'best_effort_live')
+      : rawMode
+
+    // 4. Race info
     const raceInfo = {
       raceName:        race.raceName                        || null,
       round:           race.round ? parseInt(race.round)   : null,
@@ -455,24 +486,27 @@ async function handleF1() {
       endTime:     latestSession.date_end,
     } : null
 
-    // 6. Live data — fetch for active OR latest completed session
-    // When sessions came from Jolpica (session_key=null), fall back to OpenF1 'latest'
-    let liveData = {}
+    // 6. Live data
+    let liveData  = {}
+    const isActive = mode === 'live' || mode === 'best_effort_live'
     const explicitKey = activeSession?.session_key ?? (mode === 'post_session' ? latestSession?.session_key : null)
-    const needsLive   = mode === 'best_effort_live' || mode === 'post_session'
-    const fetchKey    = explicitKey ?? (needsLive ? 'latest' : null)
+    // When session came from Jolpica (no session_key), try OpenF1 'latest'
+    const fetchKey = explicitKey ?? ((isActive || mode === 'post_session') ? 'latest' : null)
+
     if (fetchKey) {
       try {
-        liveData = await fetchLiveData(fetchKey)
+        liveData = await fetchLiveData(fetchKey, of1, authenticated)
       } catch (err) {
-        warnings.push(`Live timing unavailable: ${err.message}`)
+        if (err.message?.includes('401') || err.message?.includes('403')) invalidateToken()
+        warnings.push(`Live timing: ${err.message}`)
       }
     }
 
     const payload = {
       mode,
-      source:          'OpenF1 free REST via Cloudflare Pages Function',
-      scheduleSource:  'Jolpica',
+      source:          'OpenF1 real-time API via Cloudflare Pages Function',
+      authenticated,
+      scheduleSource:  sessions.length && sessions[0]?.session_key ? 'OpenF1' : 'Jolpica',
       liveSource:      'OpenF1',
       generatedAt,
       dataAgeSeconds:  0,
@@ -483,15 +517,22 @@ async function handleF1() {
       activeSession:   activeInfo,
       nextSession:     nextInfo,
       latestSession:   latestInfo,
+      // Convenience top-level fields for the active session
+      session_key:     activeInfo?.session_key    ?? null,
+      meeting_key:     activeInfo?.meeting_key    ?? null,
+      sessionName:     activeInfo?.sessionName    ?? null,
+      sessionType:     activeInfo?.sessionType    ?? null,
       trackStatus:     liveData.trackStatus  ?? null,
       leaderboard:     liveData.leaderboard  ?? [],
       raceControl:     liveData.raceControl  ?? [],
       weather:         liveData.weather      ?? null,
       currentLap:      liveData.currentLap   ?? null,
-      isLive:          mode === 'best_effort_live',
+      isLive:          mode === 'live' || mode === 'best_effort_live',
     }
 
-    const ttl = mode === 'best_effort_live' ? 5 : mode === 'pre_session' ? 30 : 60
+    const ttl = (mode === 'live' || mode === 'best_effort_live') ? 5
+              : mode === 'pre_session' ? 30
+              : 60
     await setFullCache(payload, ttl)
     return jsonRes(payload)
 
@@ -505,10 +546,10 @@ async function handleF1() {
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 
-export async function onRequestGet({ request }) {
+export async function onRequestGet({ request, env }) {
   const series = new URL(request.url).searchParams.get('series') || 'f1'
 
-  if (series === 'f1') return handleF1()
+  if (series === 'f1') return handleF1(env)
 
   if (series === 'nascar') {
     try {

@@ -442,7 +442,7 @@ function LiveView({ data, ageMs }) {
             color: 'var(--red)', animation: 'pulseLive 1.4s ease-in-out infinite',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            ● BEST-EFFORT LIVE
+            {data.authenticated ? '● LIVE' : '● BEST-EFFORT LIVE'}
           </span>
           {activeSession?.sessionName && (
             <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.85rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -501,7 +501,9 @@ function LiveView({ data, ageMs }) {
           </HubPanel>
           <div style={{ padding: '8px 10px', borderTop: '1px solid #141414' }}>
             <div style={{ fontSize: 9, color: '#2a2a2a', letterSpacing: '0.08em', fontFamily: 'var(--font-display)', fontWeight: 700, textTransform: 'uppercase' }}>
-              Best-effort live timing — may be delayed · Source: OpenF1 free REST
+              {data.authenticated
+                ? 'Live timing via OpenF1 real-time API · Unofficial RaceNRoam watch party dashboard · Not affiliated with F1, FIA, or FOM'
+                : 'Best-effort live timing — may be delayed · Source: OpenF1 · Unofficial watch party dashboard'}
             </div>
           </div>
         </div>
@@ -776,11 +778,11 @@ export default function StreamPage() {
         {liveData?.noFreeApi && <NoFreeApiView series={series} liveData={liveData} />}
 
         {/* F1 state machine */}
-        {!liveData?.noFreeApi && mode === 'pre_session'       && <PreSessionView  data={liveData} />}
-        {!liveData?.noFreeApi && mode === 'best_effort_live'  && <LiveView        data={liveData} ageMs={ageMs} />}
-        {!liveData?.noFreeApi && mode === 'post_session'      && <PostSessionView data={liveData} />}
-        {!liveData?.noFreeApi && mode === 'no_active_session' && <NoSessionView   data={liveData} />}
-        {!liveData?.noFreeApi && mode === 'unavailable'       && <UnavailableView data={liveData} />}
+        {!liveData?.noFreeApi && mode === 'pre_session'                                  && <PreSessionView  data={liveData} />}
+        {!liveData?.noFreeApi && (mode === 'live' || mode === 'best_effort_live')        && <LiveView        data={liveData} ageMs={ageMs} />}
+        {!liveData?.noFreeApi && mode === 'post_session'                                 && <PostSessionView data={liveData} />}
+        {!liveData?.noFreeApi && mode === 'no_active_session'                            && <NoSessionView   data={liveData} />}
+        {!liveData?.noFreeApi && mode === 'unavailable'                                  && <UnavailableView data={liveData} />}
         {!liveData?.noFreeApi && !mode && !liveLoading && <UnavailableView data={{ warnings: ['No data received.'] }} />}
       </div>
 
