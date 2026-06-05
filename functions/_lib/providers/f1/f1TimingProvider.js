@@ -107,10 +107,15 @@ export async function getF1TimingLiveData({ schedule, raceDate, raceName, year }
   const sessDate        = session.startTime.slice(0, 10)
   const sessFolder      = session.session.replace(/\s+/g, '_')
 
-  // Try race-date prefix first (standard), then first-session date (sprint weekends may differ)
+  // Build multiple path candidates to handle CDN naming variations:
+  //   1. Standard: race-date_Meeting_Name/sess-date_Session/
+  //   2. Sprint weekends: first-session-date as meeting prefix
+  //   3. Short name: strip "_Grand_Prix" suffix (some tracks use short form)
+  const shortName = meetingName.replace(/_Grand_Prix$/, '').replace(/_Grand_Prix_/, '_')
   const candidates = [...new Set([
     `${year}/${raceDateStr}_${meetingName}/${sessDate}_${sessFolder}/`,
     `${year}/${firstSessDate}_${meetingName}/${sessDate}_${sessFolder}/`,
+    `${year}/${raceDateStr}_${shortName}/${sessDate}_${sessFolder}/`,
   ])]
 
   for (const path of candidates) {

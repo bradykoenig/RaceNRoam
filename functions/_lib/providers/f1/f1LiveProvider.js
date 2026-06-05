@@ -47,25 +47,33 @@ function getSessionCategory(session) {
 
 // ── Jolpica race data (used to build session schedule for F1 timing) ──────────
 
+function jolpicaSession(obj, name) {
+  if (!obj?.date || !obj?.time) return null
+  return { session: name, startTime: `${obj.date}T${obj.time}` }
+}
+
 async function getJolpicaRaceData() {
   try {
     const data = await cachedFetchJson(
       `https://api.jolpi.ca/ergast/f1/${YEAR}/next.json`,
       { headers: { Accept: 'application/json' } },
-      300  // 5-minute CF edge cache — Jolpica rarely changes mid-session
+      300  // 5-minute CF edge cache
     )
     const race = data?.MRData?.RaceTable?.Races?.[0]
     if (!race) return null
 
-    const raceDate = race.date && race.time ? `${race.date}T${race.time}` : race.date
+    const raceDate = race.date && race.time
+      ? `${race.date}T${race.time}`
+      : race.date
 
     const schedule = [
-      race.FirstPractice  && { session: 'Practice 1',       startTime: `${race.FirstPractice.date}T${race.FirstPractice.time}`   },
-      race.SecondPractice && { session: 'Practice 2',       startTime: `${race.SecondPractice.date}T${race.SecondPractice.time}` },
-      race.ThirdPractice  && { session: 'Practice 3',       startTime: `${race.ThirdPractice.date}T${race.ThirdPractice.time}`   },
-      race.Sprint         && { session: 'Sprint Race',      startTime: `${race.Sprint.date}T${race.Sprint.time}`                  },
-      race.Qualifying     && { session: 'Qualifying',       startTime: `${race.Qualifying.date}T${race.Qualifying.time}`         },
-      raceDate            && { session: 'Race',             startTime: raceDate },
+      jolpicaSession(race.FirstPractice,      'Practice 1'),
+      jolpicaSession(race.SecondPractice,     'Practice 2'),
+      jolpicaSession(race.ThirdPractice,      'Practice 3'),
+      jolpicaSession(race.SprintQualifying,   'Sprint Qualifying'),
+      jolpicaSession(race.Sprint,             'Sprint Race'),
+      jolpicaSession(race.Qualifying,         'Qualifying'),
+      raceDate && { session: 'Race', startTime: raceDate },
     ].filter(Boolean)
 
     return { raceName: race.raceName, raceDate, schedule, year: YEAR }
@@ -325,18 +333,25 @@ async function getOpenF1LiveData() {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function getF1LiveData() {
-  // 1. Try F1 timing static files (primary — free, browser-headers bypass bot filter)
+  // 1. Derive schedule from Jolpica — authoritative, auto-updates after each race
   const raceInfo = await getJolpicaRaceData()
   if (raceInfo) {
     try {
       const timing = await getF1TimingLiveData(raceInfo)
-      // Use timing data if it has actual positions OR if it's a schedule-based live shell
-      // _timingUnavailable means files were blocked — fall through to OpenF1
-      if (timing && !timing._timingUnavailable) return timing
+      if (timing) {
+        // Got real positions from F1 timing CDN — return directly
+        if (!timing._timingUnavailable) return timing
+        // CDN blocked server-side but schedule confirms session is live:
+        // return the shell with _sessionPaths so the browser can retry with
+        // its residential IP. Do NOT fall through to OpenF1 — free tier has
+        // no live data and would replace _sessionPaths with an empty response.
+        if (timing.isLive) return timing
+        // No active session per schedule — fall through to OpenF1 for context
+      }
     } catch { /* fall through */ }
   }
 
-  // 2. Fall back to OpenF1 (free for historical; live data may need paid tier)
+  // 2. OpenF1 fallback — useful for non-live state; live data requires paid tier
   try {
     return await getOpenF1LiveData()
   } catch {
