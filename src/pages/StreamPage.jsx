@@ -4,6 +4,7 @@ import { SERIES_META } from '../lib/api/endpoints'
 import { useLiveRace } from '../hooks/useLiveRace'
 import Countdown from '../components/Countdown'
 import RaceControlFeed from '../components/RaceControlFeed'
+import TrackMap from '../components/TrackMap'
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
@@ -413,7 +414,7 @@ function PreSessionView({ data }) {
 // ── MODE: best_effort_live ────────────────────────────────────────────────────
 
 function LiveView({ data, ageMs }) {
-  const { activeSession, leaderboard, raceControl, weather, trackStatus, currentLap, stale, warnings } = data
+  const { activeSession, leaderboard, raceControl, weather, trackStatus, currentLap, locations, stale, warnings } = data
   const [selectedNum, setSelectedNum] = useState(null)
 
   const sessionType = activeSession?.sessionType || ''
@@ -494,12 +495,17 @@ function LiveView({ data, ageMs }) {
           </HubPanel>
         </div>
 
-        {/* Right: race control */}
-        <div>
+        {/* Right: track map + race control */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {(locations?.length > 3) && (
+            <HubPanel title="LIVE TRACK POSITIONS">
+              <TrackMap locations={locations} positions={leaderboard} series="f1" />
+            </HubPanel>
+          )}
           <HubPanel title={`RACE CONTROL${raceControl.length ? ` (${raceControl.length})` : ''}`}>
             <RaceControlFeed messages={raceControl.slice(0, 8)} />
           </HubPanel>
-          <div style={{ padding: '8px 10px', borderTop: '1px solid #141414' }}>
+          <div style={{ padding: '8px 10px', borderTop: '1px solid #141414', marginTop: 'auto' }}>
             <div style={{ fontSize: 9, color: '#2a2a2a', letterSpacing: '0.08em', fontFamily: 'var(--font-display)', fontWeight: 700, textTransform: 'uppercase' }}>
               {data.authenticated
                 ? 'Live timing via OpenF1 real-time API · Unofficial RaceNRoam watch party dashboard · Not affiliated with F1, FIA, or FOM'

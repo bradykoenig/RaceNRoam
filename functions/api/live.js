@@ -208,7 +208,7 @@ async function fetchLiveData(sessionKey, of1, authenticated) {
   const rt = authenticated ? 3 : 5
   const lt = authenticated ? 5 : 15
 
-  const [posR, intR, lapR, rcR, wxR, carR, stintR, tsR, drvR] = await Promise.allSettled([
+  const [posR, intR, lapR, rcR, wxR, carR, stintR, tsR, drvR, locR] = await Promise.allSettled([
     of1(`/position?session_key=${sessionKey}`,     rt),
     of1(`/intervals?session_key=${sessionKey}`,    rt),
     of1(`/laps?session_key=${sessionKey}`,         lt),
@@ -218,6 +218,7 @@ async function fetchLiveData(sessionKey, of1, authenticated) {
     of1(`/stints?session_key=${sessionKey}`,       authenticated ? 20 : 30),
     of1(`/track_status?session_key=${sessionKey}`, rt),
     of1(`/drivers?session_key=${sessionKey}`,      300),
+    of1(`/location?session_key=${sessionKey}`,     rt),
   ])
 
   const drivers = {}
@@ -247,10 +248,24 @@ async function fetchLiveData(sessionKey, of1, authenticated) {
     if (!fastestPD[dn] || dur < fastestPD[dn].lap_duration) fastestPD[dn] = lap
   }
 
+  // Latest lap by lap_number (may be in-progress, no sector 3 yet) — for lap counter
   const latestLap = {}
   for (const lap of allLaps) {
     const dn = lap.driver_number
     if (!latestLap[dn] || lap.lap_number > latestLap[dn].lap_number) latestLap[dn] = lap
+  }
+
+  // Last COMPLETED lap (has sector 3 time) — for sector display
+  // The in-progress lap won't have duration_sector_3 until the driver crosses the line,
+  // which is why sector 3 appeared blank: we were reading the current unfinished lap.
+  const lastCompletedLap = {}
+  for (const lap of allLaps) {
+    const dn = lap.driver_number
+    if (lap.duration_sector_3 != null && lap.duration_sector_3 > 0) {
+      if (!lastCompletedLap[dn] || lap.lap_number > lastCompletedLap[dn].lap_number) {
+        lastCompletedLap[dn] = lap
+      }
+    }
   }
 
   const bestS = [
@@ -278,16 +293,20 @@ async function fetchLiveData(sessionKey, of1, authenticated) {
     const fl = fastestPD[p.number]
     if (fl) { p.fastestLap = fmtLap(fl.lap_duration); p.fastestLapNum = fl.lap_number }
 
-    const ll = latestLap[p.number]
+    const ll = latestLap[p.number]       // current/latest lap (for lap number)
+    const cl = lastCompletedLap[p.number] // last fully-completed lap (for sectors)
     const pb = pbS[p.number] ?? [Infinity, Infinity, Infinity]
+
     if (ll) {
-      p.sectors = [
-        { time: ll.duration_sector_1?.toFixed(3) ?? null, color: sColor(ll.duration_sector_1, bestS[0], pb[0]) },
-        { time: ll.duration_sector_2?.toFixed(3) ?? null, color: sColor(ll.duration_sector_2, bestS[1], pb[1]) },
-        { time: ll.duration_sector_3?.toFixed(3) ?? null, color: sColor(ll.duration_sector_3, bestS[2], pb[2]) },
-      ]
       p.lapNumber   = ll.lap_number
       p.isPitOutLap = ll.is_pit_out_lap
+    }
+    if (cl) {
+      p.sectors = [
+        { time: cl.duration_sector_1?.toFixed(3) ?? null, color: sColor(cl.duration_sector_1, bestS[0], pb[0]) },
+        { time: cl.duration_sector_2?.toFixed(3) ?? null, color: sColor(cl.duration_sector_2, bestS[1], pb[1]) },
+        { time: cl.duration_sector_3?.toFixed(3) ?? null, color: sColor(cl.duration_sector_3, bestS[2], pb[2]) },
+      ]
     }
   }
 
@@ -351,7 +370,14 @@ async function fetchLiveData(sessionKey, of1, authenticated) {
   const lapNums    = allLaps.map(l => l.lap_number).filter(n => n > 0)
   const currentLap = lapNums.length ? Math.max(...lapNums) : null
 
-  return { leaderboard, trackStatus, raceControl, weather, currentLap }
+  // Car positions for track map — latest X/Y per driver
+  const locations = latestPerDriver(locR.value ?? []).map(l => ({
+    driver_number: l.driver_number,
+    x: l.x,
+    y: l.y,
+  })).filter(l => l.x != null && l.y != null)
+
+  return { leaderboard, trackStatus, raceControl, weather, currentLap, locations }
 }
 
 // ── Unavailable payload ───────────────────────────────────────────────────────
@@ -515,6 +541,7 @@ async function doFreshFetch(env) {
     raceControl:    liveData.raceControl ?? [],
     weather:        liveData.weather     ?? null,
     currentLap:     liveData.currentLap  ?? null,
+    locations:      liveData.locations   ?? [],
     isLive:         mode === 'live' || mode === 'best_effort_live',
   }
 
