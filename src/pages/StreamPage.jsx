@@ -299,8 +299,9 @@ function SessionSchedule({ sessions, nextSessionStart }) {
       {sessions.map((s, i) => {
         const start  = new Date(s.startTime).getTime()
         const isNext = s.startTime === nextSessionStart
-        const isPast = start < now && !isNext
         const isNow  = start <= now && now <= new Date(s.endTime).getTime() + 15 * 60_000
+        const isPast = start < now && !isNow && !isNext
+        const badgeCls = isNow ? ' live' : isNext ? ' next' : ''
         return (
           <div
             key={i}
@@ -311,10 +312,10 @@ function SessionSchedule({ sessions, nextSessionStart }) {
               <div className="stream-sched-name">{s.sessionName}</div>
               <div className="stream-sched-time">{fmtTime(s.startTime)}</div>
             </div>
-            <span className={`stream-sched-badge${isNext ? ' next' : ''}`}>
-              {isNow  ? 'LIVE'     :
-               isNext ? 'NEXT'     :
-               isPast ? 'DONE'     : 'UPCOMING'}
+            <span className={`stream-sched-badge${badgeCls}`}>
+              {isNow  ? '● LIVE'  :
+               isNext ? 'NEXT'    :
+               isPast ? 'DONE'    : 'UPCOMING'}
             </span>
           </div>
         )
@@ -414,7 +415,7 @@ function PreSessionView({ data }) {
 // ── MODE: best_effort_live ────────────────────────────────────────────────────
 
 function LiveView({ data, ageMs }) {
-  const { activeSession, leaderboard, raceControl, weather, trackStatus, currentLap, locations, stale, warnings } = data
+  const { activeSession, leaderboard, raceControl, weather, trackStatus, currentLap, totalLaps, locations, stale, warnings } = data
   const [selectedNum, setSelectedNum] = useState(null)
 
   const sessionType = activeSession?.sessionType || ''
@@ -452,7 +453,11 @@ function LiveView({ data, ageMs }) {
           )}
           {isRace && currentLap != null && (
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: '#666' }}>
-              LAP <span style={{ color: '#fff', fontWeight: 700 }}>{currentLap}</span>
+              LAP{' '}
+              <span style={{ color: '#fff', fontWeight: 700 }}>{currentLap}</span>
+              {totalLaps != null && (
+                <span style={{ color: '#444' }}> / {totalLaps}</span>
+              )}
             </span>
           )}
         </div>
@@ -461,10 +466,10 @@ function LiveView({ data, ageMs }) {
           {ageSec != null && (
             <span style={{
               fontSize: 10, fontFamily: 'monospace',
-              color: ageSec > 30 ? '#e63946' : ageSec > 15 ? '#fa0' : '#2e2e2e',
-              padding: '1px 5px', border: `1px solid ${ageSec > 30 ? '#3a0000' : '#1e1e1e'}`,
+              color: ageSec > 45 ? '#e63946' : ageSec > 20 ? '#fa0' : '#2e2e2e',
+              padding: '1px 5px', border: `1px solid ${ageSec > 45 ? '#3a0000' : '#1e1e1e'}`,
             }}>
-              {ageSec > 30 ? `⚠ ${ageSec}s ago` : `↻ ${ageSec}s ago`}
+              {ageSec > 45 ? `⚠ ${ageSec}s ago` : `↻ ${ageSec}s ago`}
             </span>
           )}
           {stale && <span style={{ color: '#fa0', fontSize: 10 }}>STALE</span>}
@@ -478,7 +483,7 @@ function LiveView({ data, ageMs }) {
       )}
 
       {/* Main grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(480px, 1.8fr) minmax(240px, 1fr)', flex: 1, minHeight: 0 }}>
+      <div className="stream-live-grid">
 
         {/* Left: leaderboard + telemetry */}
         <div style={{ borderRight: '1px solid #141414', display: 'flex', flexDirection: 'column' }}>
@@ -503,7 +508,9 @@ function LiveView({ data, ageMs }) {
             </HubPanel>
           )}
           <HubPanel title={`RACE CONTROL${raceControl.length ? ` (${raceControl.length})` : ''}`}>
-            <RaceControlFeed messages={raceControl.slice(0, 8)} />
+            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              <RaceControlFeed messages={raceControl.slice(0, 15)} />
+            </div>
           </HubPanel>
           <div style={{ padding: '8px 10px', borderTop: '1px solid #141414', marginTop: 'auto' }}>
             <div style={{ fontSize: 9, color: '#2a2a2a', letterSpacing: '0.08em', fontFamily: 'var(--font-display)', fontWeight: 700, textTransform: 'uppercase' }}>
@@ -706,8 +713,9 @@ function LoadingView({ meta }) {
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 function StreamFooter({ mode, lastFetch, stale }) {
-  const right = mode === 'best_effort_live'
-    ? `● Best-effort live timing · may be delayed${stale ? ' · STALE' : ''}`
+  const isLiveMode = mode === 'live' || mode === 'best_effort_live'
+  const right = isLiveMode
+    ? `● ${mode === 'live' ? 'Live' : 'Best-effort live'} timing · OpenF1${stale ? ' · STALE' : ''}`
     : lastFetch ? `Auto-refresh · Last: ${fmtShortTime(lastFetch.toISOString())}` : 'Auto-refresh'
 
   return (

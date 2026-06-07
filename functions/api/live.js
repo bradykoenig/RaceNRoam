@@ -370,6 +370,14 @@ async function fetchLiveData(sessionKey, of1, authenticated) {
   const lapNums    = allLaps.map(l => l.lap_number).filter(n => n > 0)
   const currentLap = lapNums.length ? Math.max(...lapNums) : null
 
+  // Extract total laps from race control messages (e.g. "LAP 1 OF 78" or "OF 78 LAPS")
+  let totalLaps = null
+  for (const m of [...(rcR.value ?? [])].sort((a, b) => b.date > a.date ? 1 : -1)) {
+    if (!m.message) continue
+    const match = m.message.match(/(?:of|\/)\s*(\d{2,3})\s*(?:laps?)?/i)
+    if (match) { totalLaps = parseInt(match[1], 10); break }
+  }
+
   // Car positions for track map — latest X/Y per driver
   const locations = latestPerDriver(locR.value ?? []).map(l => ({
     driver_number: l.driver_number,
@@ -377,7 +385,7 @@ async function fetchLiveData(sessionKey, of1, authenticated) {
     y: l.y,
   })).filter(l => l.x != null && l.y != null)
 
-  return { leaderboard, trackStatus, raceControl, weather, currentLap, locations }
+  return { leaderboard, trackStatus, raceControl, weather, currentLap, totalLaps, locations }
 }
 
 // ── Unavailable payload ───────────────────────────────────────────────────────
@@ -394,7 +402,7 @@ function unavailablePayload(generatedAt, reason) {
     session_key: null, meeting_key: null,
     sessionName: null, sessionType: null,
     trackStatus: null, leaderboard: [], raceControl: [],
-    weather: null, currentLap: null, isLive: false,
+    weather: null, currentLap: null, totalLaps: null, isLive: false,
   }
 }
 
@@ -541,6 +549,7 @@ async function doFreshFetch(env) {
     raceControl:    liveData.raceControl ?? [],
     weather:        liveData.weather     ?? null,
     currentLap:     liveData.currentLap  ?? null,
+    totalLaps:      liveData.totalLaps   ?? null,
     locations:      liveData.locations   ?? [],
     isLive:         mode === 'live' || mode === 'best_effort_live',
   }
