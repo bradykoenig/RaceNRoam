@@ -1,63 +1,123 @@
-// F1 2026 fallback data – Monaco Grand Prix weekend
-// Session times sourced from Jolpica /2026/next.json (UTC, Z-suffix)
+// F1 fallback – auto-derives the next race from the calendar, never stale.
+import { getCalendarFallback } from './calendarFallback.js'
+
+// Per-circuit coordinates for weather / map (best-effort; null is safe)
+const CIRCUIT_META = {
+  'Circuit Gilles Villeneuve':         { lat: 45.5048,  lon: -73.5258,  type: 'Temporary Circuit',  laps: 70 },
+  'Circuit de Barcelona-Catalunya':    { lat: 41.57,    lon: 2.2611,    type: 'Permanent Circuit',  laps: 66 },
+  'Red Bull Ring':                     { lat: 47.2197,  lon: 14.7647,   type: 'Permanent Circuit',  laps: 71 },
+  'Silverstone Circuit':               { lat: 52.0786,  lon: -1.0169,   type: 'Permanent Circuit',  laps: 52 },
+  'Hungaroring':                       { lat: 47.5789,  lon: 19.2486,   type: 'Permanent Circuit',  laps: 70 },
+  'Circuit de Spa-Francorchamps':      { lat: 50.4372,  lon: 5.9714,    type: 'Permanent Circuit',  laps: 44 },
+  'Circuit Zandvoort':                 { lat: 52.3888,  lon: 4.5409,    type: 'Permanent Circuit',  laps: 72 },
+  'Autodromo Nazionale Monza':         { lat: 45.6156,  lon: 9.2811,    type: 'Permanent Circuit',  laps: 53 },
+  'Marina Bay Street Circuit':         { lat: 1.2914,   lon: 103.864,   type: 'Street Circuit',     laps: 61 },
+  'Circuit of the Americas':           { lat: 30.1328,  lon: -97.6411,  type: 'Permanent Circuit',  laps: 56 },
+  'Autodromo Hermanos Rodriguez':      { lat: 19.4042,  lon: -99.0907,  type: 'Permanent Circuit',  laps: 71 },
+  'Autodromo José Carlos Pace':        { lat: -23.7036, lon: -46.6997,  type: 'Permanent Circuit',  laps: 71 },
+  'Las Vegas Strip Circuit':           { lat: 36.1147,  lon: -115.1728, type: 'Street Circuit',     laps: 50 },
+  'Lusail International Circuit':      { lat: 25.49,    lon: 51.4542,   type: 'Permanent Circuit',  laps: 57 },
+  'Yas Marina Circuit':                { lat: 24.4672,  lon: 54.6031,   type: 'Permanent Circuit',  laps: 55 },
+}
+
+function buildApproxSchedule(raceDateStr) {
+  const race = new Date(raceDateStr)
+  const fri  = new Date(race.getTime() - 2 * 86400000)
+  const sat  = new Date(race.getTime() - 1 * 86400000)
+
+  const at = (base, utcH, utcM) => {
+    const d = new Date(base)
+    d.setUTCHours(utcH, utcM, 0, 0)
+    return d.toISOString()
+  }
+
+  const now = new Date()
+  const s = t => (new Date(t) < now ? 'Completed' : 'Upcoming')
+
+  return [
+    { session: 'Practice 1',  startTime: at(fri, 13, 30), status: s(at(fri, 13, 30)) },
+    { session: 'Practice 2',  startTime: at(fri, 17,  0), status: s(at(fri, 17,  0)) },
+    { session: 'Practice 3',  startTime: at(sat, 12, 30), status: s(at(sat, 12, 30)) },
+    { session: 'Qualifying',  startTime: at(sat, 16,  0), status: s(at(sat, 16,  0)) },
+    { session: 'Race',        startTime: raceDateStr,     status: s(raceDateStr)      },
+  ]
+}
+
 export function getFallbackF1Data() {
+  const calendar = getCalendarFallback()
+  const cutoff   = new Date(Date.now() - 4 * 60 * 60 * 1000)
+  const next     = calendar.find(e => e.series === 'f1' && new Date(e.date) > cutoff)
+
+  // If no upcoming race in calendar (end of season), show the last one
+  const race = next || calendar.filter(e => e.series === 'f1').at(-1)
+  if (!race) return _hardcoded()
+
+  const meta     = CIRCUIT_META[race.track] || {}
+  const schedule = buildApproxSchedule(race.date)
+  const country  = race.location?.split(', ').at(-1) || ''
+
   return {
-    series: 'f1',
+    series:     'f1',
     seriesName: 'Formula 1',
-    source: 'fallback',
+    source:     'fallback',
     lastUpdated: new Date().toISOString(),
     featuredRace: {
-      id: 'f1-monaco-2026',
-      name: 'Monaco Grand Prix',
-      track: 'Circuit de Monaco',
-      location: 'Monte Carlo, Monaco',
-      country: 'Monaco',
-      flag: '🇲🇨',
-      date: '2026-06-07T13:00:00Z',
-      status: 'Upcoming',
-      round: 6,
-      season: 2026,
+      id:          race.id,
+      name:        race.name,
+      track:       race.track,
+      location:    race.location,
+      country,
+      date:        race.date,
+      raceStart:   race.date,
+      nextSession: schedule.find(s => new Date(s.startTime) > new Date()) || null,
+      status:      'Upcoming',
+      round:       race.round,
+      season:      new Date(race.date).getFullYear(),
     },
     track: {
-      name: 'Circuit de Monaco',
-      location: 'Monte Carlo, Monaco',
-      lat: 43.7347,
-      lon: 7.42056,
-      length: '3.337 km',
-      laps: 78,
-      raceDistance: '260.286 km',
-      type: 'Street Circuit',
-      lapRecord: '1:12.909 (Lewis Hamilton, 2021)',
-      features: ['Tunnel', 'Casino Square', 'Hairpin', 'Swimming Pool'],
+      name:     race.track,
+      location: race.location,
+      lat:      meta.lat  || null,
+      lon:      meta.lon  || null,
+      type:     meta.type || 'Grand Prix Circuit',
+      laps:     meta.laps || null,
     },
-    schedule: [
-      { session: 'Practice 1', startTime: '2026-06-05T11:30:00Z', status: 'Upcoming' },
-      { session: 'Practice 2', startTime: '2026-06-05T15:00:00Z', status: 'Upcoming' },
-      { session: 'Practice 3', startTime: '2026-06-06T10:30:00Z', status: 'Upcoming' },
-      { session: 'Qualifying', startTime: '2026-06-06T14:00:00Z', status: 'Upcoming' },
-      { session: 'Race',       startTime: '2026-06-07T13:00:00Z', status: 'Upcoming' },
-    ],
-    standings: {
-      source: 'unavailable',
-      drivers: [],
-      teams: [],
-    },
-    startingGrid: [],
+    schedule,
+    standings:     { source: 'unavailable', drivers: [], teams: [] },
+    startingGrid:  [],
     weather: {
-      temperature: 22,
-      feelsLike: 20,
-      conditions: 'Partly Cloudy',
-      windSpeed: '18 km/h',
-      windDir: 'SW',
-      humidity: '55%',
-      rainChance: '15%',
-      source: 'forecast',
+      temperature: null,
+      conditions:  'Unavailable',
+      windSpeed:   '--',
+      humidity:    '--',
+      rainChance:  '--',
+      source:      'fallback',
     },
     talkingPoints: [],
     officialLinks: [
-      { label: 'F1 Official Site',  url: 'https://www.formula1.com', icon: '🏎️' },
-      { label: 'Driver Standings',  url: 'https://www.formula1.com/en/results/2026/drivers', icon: '🏆' },
-      { label: 'F1 TV',             url: 'https://f1tv.formula1.com', icon: '📺' },
+      { label: 'Formula 1 Official', url: 'https://www.formula1.com',                         icon: '🏎️' },
+      { label: 'Driver Standings',   url: 'https://www.formula1.com/en/results/2026/drivers', icon: '🏆' },
+      { label: 'F1 TV',              url: 'https://f1tv.formula1.com',                        icon: '📺' },
+    ],
+  }
+}
+
+// Last-resort static entry in case calendar import fails
+function _hardcoded() {
+  return {
+    series: 'f1', seriesName: 'Formula 1', source: 'fallback',
+    lastUpdated: new Date().toISOString(),
+    featuredRace: { name: 'Canadian Grand Prix', track: 'Circuit Gilles Villeneuve',
+      location: 'Montreal, Quebec, Canada', country: 'Canada',
+      date: '2026-06-14T18:00:00Z', raceStart: '2026-06-14T18:00:00Z',
+      status: 'Upcoming', round: 9, season: 2026 },
+    track: { name: 'Circuit Gilles Villeneuve', location: 'Montreal, Quebec, Canada',
+      lat: 45.5048, lon: -73.5258, type: 'Temporary Circuit', laps: 70 },
+    schedule: [], standings: { source: 'unavailable', drivers: [], teams: [] },
+    startingGrid: [], weather: { temperature: null, conditions: 'Unavailable', source: 'fallback' },
+    talkingPoints: [],
+    officialLinks: [
+      { label: 'Formula 1 Official', url: 'https://www.formula1.com', icon: '🏎️' },
     ],
   }
 }

@@ -190,10 +190,13 @@ export async function onRequestGet({ env }) {
     let schedule     = []
     let nextSession  = null   // first upcoming session of any type
 
+    // Grace window: keep the current race visible for 4 h after its official start
+    const raceCutoff = new Date(Date.now() - 4 * 60 * 60 * 1000)
+
     try {
       jolpicaRace = await getNextRace()
-      if (jolpicaRace && isCurrentYear(jolpicaRace.date)) {
-        raceStart = jolpicaRace.date              // e.g. "2026-06-07T13:00:00Z" — always the race
+      if (jolpicaRace && new Date(jolpicaRace.date) > raceCutoff) {
+        raceStart = jolpicaRace.date              // e.g. "2026-06-14T18:00:00Z" — always the race
         schedule  = jolpicaSchedule(jolpicaRace)  // FP1…Quali…Race in date order
 
         const now = new Date()
@@ -201,7 +204,7 @@ export async function onRequestGet({ env }) {
 
         console.log(`[f1] Jolpica next race: ${jolpicaRace.name} race on ${raceStart}`)
       } else {
-        console.warn(`[f1] Jolpica returned invalid year data (${jolpicaRace?.date}) — skipping`)
+        console.warn(`[f1] Jolpica returned stale/past data (${jolpicaRace?.date}) — skipping`)
         jolpicaRace = null
       }
     } catch (err) {
@@ -250,14 +253,14 @@ export async function onRequestGet({ env }) {
             const now = new Date()
             nextSession = schedule.find(s => new Date(s.startTime) > now) ?? nextSession
           } else {
-            // Jolpica failed — use OpenF1 entirely, but still find race session correctly
-            if (parsed.raceSession && isCurrentYear(parsed.raceSession.date_start)) {
+            // Jolpica failed — use OpenF1 entirely, but only if the race is in the future
+            if (parsed.raceSession && new Date(parsed.raceSession.date_start) > raceCutoff) {
               raceStart   = parsed.raceSession.date_start
               schedule    = parsed.schedule
               nextSession = parsed.nextSession
               console.log(`[f1] OpenF1 fallback race session: ${raceStart}`)
             } else {
-              console.warn('[f1] OpenF1 has no valid race session for current year')
+              console.warn(`[f1] OpenF1 race session is past or missing (${parsed.raceSession?.date_start}) — skipping`)
             }
           }
 
@@ -299,12 +302,18 @@ export async function onRequestGet({ env }) {
         const event      = extractNextEvent(scoreboard)
         const normalized = normalizeEvent(event, 'f1')
         if (normalized?.name) {
-          raceName     = normalized.name
-          raceCircuit  = raceCircuit  || normalized.track
-          raceLocation = raceLocation || normalized.location
-          raceCountry  = raceCountry  || normalized.country
-          console.log(`[f1] ESPN race name fallback: ${raceName}`)
-          // NOTE: we do NOT use normalized.date for raceStart — ESPN may return FP1 date
+          // Reject ESPN events that have a date clearly in the past — ESPN can lag
+          const espnDate = normalized.date ? new Date(normalized.date) : null
+          if (!espnDate || espnDate > raceCutoff) {
+            raceName     = normalized.name
+            raceCircuit  = raceCircuit  || normalized.track
+            raceLocation = raceLocation || normalized.location
+            raceCountry  = raceCountry  || normalized.country
+            console.log(`[f1] ESPN race name fallback: ${raceName}`)
+            // NOTE: we do NOT use normalized.date for raceStart — ESPN may return FP1 date
+          } else {
+            console.warn(`[f1] ESPN event is stale (${normalized.date}) — skipping name`)
+          }
         }
       } catch (err) {
         console.error('[f1] ESPN error:', err.message)
