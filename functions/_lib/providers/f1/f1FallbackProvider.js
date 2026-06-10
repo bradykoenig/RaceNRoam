@@ -1,23 +1,34 @@
-// F1 server-side fallback – auto-derives next race from the embedded calendar.
-// Never hardcoded to a specific race; updates automatically as dates pass.
+// F1 server-side fallback — no hardcoded race data, fully automatic year-over-year.
+// Attempts a lightweight Jolpica re-fetch; returns a generic placeholder if that fails too.
 
-const F1_2026 = [
-  { round: 9,  name: 'Canadian Grand Prix',     track: 'Circuit Gilles Villeneuve',     location: 'Montreal, Quebec, Canada',      country: 'Canada',       date: '2026-06-14T18:00:00Z', lat: 45.5048,  lon: -73.5258  },
-  { round: 10, name: 'Spanish Grand Prix',      track: 'Circuit de Barcelona-Catalunya', location: 'Barcelona, Spain',              country: 'Spain',        date: '2026-06-28T13:00:00Z', lat: 41.57,    lon: 2.2611    },
-  { round: 11, name: 'Austrian Grand Prix',     track: 'Red Bull Ring',                 location: 'Spielberg, Austria',            country: 'Austria',      date: '2026-07-05T13:00:00Z', lat: 47.2197,  lon: 14.7647   },
-  { round: 12, name: 'British Grand Prix',      track: 'Silverstone Circuit',           location: 'Silverstone, UK',               country: 'UK',           date: '2026-07-12T13:00:00Z', lat: 52.0786,  lon: -1.0169   },
-  { round: 13, name: 'Hungarian Grand Prix',    track: 'Hungaroring',                   location: 'Mogyoród, Hungary',             country: 'Hungary',      date: '2026-07-26T13:00:00Z', lat: 47.5789,  lon: 19.2486   },
-  { round: 14, name: 'Belgian Grand Prix',      track: 'Circuit de Spa-Francorchamps',  location: 'Stavelot, Belgium',             country: 'Belgium',      date: '2026-08-02T13:00:00Z', lat: 50.4372,  lon: 5.9714    },
-  { round: 15, name: 'Dutch Grand Prix',        track: 'Circuit Zandvoort',             location: 'Zandvoort, Netherlands',        country: 'Netherlands',  date: '2026-08-30T13:00:00Z', lat: 52.3888,  lon: 4.5409    },
-  { round: 16, name: 'Italian Grand Prix',      track: 'Autodromo Nazionale Monza',     location: 'Monza, Italy',                  country: 'Italy',        date: '2026-09-06T13:00:00Z', lat: 45.6156,  lon: 9.2811    },
-  { round: 17, name: 'Singapore Grand Prix',    track: 'Marina Bay Street Circuit',     location: 'Singapore',                     country: 'Singapore',    date: '2026-09-20T12:00:00Z', lat: 1.2914,   lon: 103.864   },
-  { round: 18, name: 'United States Grand Prix',track: 'Circuit of the Americas',       location: 'Austin, Texas, USA',            country: 'USA',          date: '2026-10-18T19:00:00Z', lat: 30.1328,  lon: -97.6411  },
-  { round: 19, name: 'Mexico City Grand Prix',  track: 'Autodromo Hermanos Rodriguez',  location: 'Mexico City, Mexico',           country: 'Mexico',       date: '2026-10-25T20:00:00Z', lat: 19.4042,  lon: -99.0907  },
-  { round: 20, name: 'São Paulo Grand Prix',    track: 'Autodromo José Carlos Pace',    location: 'São Paulo, Brazil',             country: 'Brazil',       date: '2026-11-08T17:00:00Z', lat: -23.7036, lon: -46.6997  },
-  { round: 21, name: 'Las Vegas Grand Prix',    track: 'Las Vegas Strip Circuit',       location: 'Las Vegas, Nevada, USA',        country: 'USA',          date: '2026-11-22T06:00:00Z', lat: 36.1147,  lon: -115.1728 },
-  { round: 22, name: 'Qatar Grand Prix',        track: 'Lusail International Circuit',  location: 'Lusail, Qatar',                 country: 'Qatar',        date: '2026-11-29T14:00:00Z', lat: 25.49,    lon: 51.4542   },
-  { round: 23, name: 'Abu Dhabi Grand Prix',    track: 'Yas Marina Circuit',            location: 'Abu Dhabi, UAE',                country: 'UAE',          date: '2026-12-06T09:00:00Z', lat: 24.4672,  lon: 54.6031   },
-]
+const BASE = 'https://api.jolpi.ca/ergast/f1'
+
+async function tryJolpicaNext() {
+  const year = new Date().getFullYear()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 4000)
+  try {
+    const res = await fetch(`${BASE}/${year}.json?limit=30`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const races = data?.MRData?.RaceTable?.Races || []
+    const yesterday = Date.now() - 86_400_000
+    // Same algorithm as getJolpicaRace in live.js / getNextRace in jolpicaProvider.js
+    for (const r of races) {
+      const raceMs = new Date(`${r.date}T${r.time || '13:00:00Z'}`).getTime()
+      if (Date.now() >= raceMs - 4 * 86_400_000 && Date.now() <= raceMs + 86_400_000) return r
+    }
+    return races.find(r => new Date(r.date).getTime() >= yesterday) || null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 function buildApproxSchedule(raceDateStr) {
   const race = new Date(raceDateStr)
@@ -29,7 +40,6 @@ function buildApproxSchedule(raceDateStr) {
     d.setUTCHours(utcH, utcM, 0, 0)
     return d.toISOString()
   }
-
   const now = new Date()
   const s = t => (new Date(t) < now ? 'Completed' : 'Upcoming')
 
@@ -42,54 +52,72 @@ function buildApproxSchedule(raceDateStr) {
   ]
 }
 
-export function getFallbackF1Data() {
-  const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000)
-  const next   = F1_2026.find(r => new Date(r.date) > cutoff) || F1_2026.at(-1)
+function genericLinks(year) {
+  return [
+    { label: 'Formula 1 Official', url: 'https://www.formula1.com',                        icon: '🏎️' },
+    { label: 'Driver Standings',   url: `https://www.formula1.com/en/results/${year}/drivers`, icon: '🏆' },
+    { label: 'F1 TV',              url: 'https://f1tv.formula1.com',                       icon: '📺' },
+  ]
+}
 
-  const schedule = buildApproxSchedule(next.date)
+export async function getFallbackF1Data() {
+  const year = new Date().getFullYear()
+  const race = await tryJolpicaNext()
 
+  if (race) {
+    const raceDate = race.date && race.time ? `${race.date}T${race.time}` : race.date
+    const schedule = buildApproxSchedule(raceDate)
+    const loc      = race.Circuit?.Location || {}
+    const location = [loc.locality, loc.country].filter(Boolean).join(', ')
+
+    return {
+      series:      'f1',
+      seriesName:  'Formula 1',
+      featuredRace: {
+        id:          `f1-round-${race.round}-${year}`,
+        name:        race.raceName      || 'Grand Prix',
+        track:       race.Circuit?.circuitName || '',
+        location,
+        country:     loc.country        || '',
+        date:        raceDate,
+        raceStart:   raceDate,
+        nextSession: schedule.find(s => new Date(s.startTime) > new Date()) || null,
+        status:      'Upcoming',
+        round:       parseInt(race.round, 10) || null,
+        season:      year,
+      },
+      track: {
+        name:     race.Circuit?.circuitName || '',
+        location,
+        lat:      parseFloat(loc.lat)  || null,
+        lon:      parseFloat(loc.long) || null,
+        type:     'Grand Prix Circuit',
+      },
+      schedule,
+      standings: { source: 'unavailable', drivers: [], teams: [] },
+      weather: {
+        temperature: 20, conditions: 'Partly Cloudy',
+        windSpeed: '15 km/h', humidity: '55%', rainChance: '10%', source: 'fallback',
+      },
+      talkingPoints: [],
+      officialLinks: genericLinks(year),
+    }
+  }
+
+  // Ultimate fallback — generic placeholder when Jolpica is completely unreachable
   return {
     series:      'f1',
     seriesName:  'Formula 1',
     featuredRace: {
-      id:          `f1-${next.track.toLowerCase().replace(/\s+/g, '-')}-2026`,
-      name:        next.name,
-      track:       next.track,
-      location:    next.location,
-      country:     next.country,
-      date:        next.date,
-      raceStart:   next.date,
-      nextSession: schedule.find(s => new Date(s.startTime) > new Date()) || null,
-      status:      'Upcoming',
-      round:       next.round,
-      season:      2026,
+      name: 'F1 Grand Prix', track: '', location: '', country: '',
+      date: null, raceStart: null, nextSession: null,
+      status: 'Upcoming', round: null, season: year,
     },
-    track: {
-      name:     next.track,
-      location: next.location,
-      lat:      next.lat,
-      lon:      next.lon,
-      type:     'Grand Prix Circuit',
-    },
-    schedule,
-    standings: {
-      source:  'unavailable',
-      drivers: [],
-      teams:   [],
-    },
-    weather: {
-      temperature: 20,
-      conditions:  'Partly Cloudy',
-      windSpeed:   '15 km/h',
-      humidity:    '55%',
-      rainChance:  '10%',
-      source:      'fallback',
-    },
+    track:     { name: '', location: '', lat: null, lon: null, type: 'Grand Prix Circuit' },
+    schedule:  [],
+    standings: { source: 'unavailable', drivers: [], teams: [] },
+    weather:   { temperature: null, conditions: 'Unavailable', source: 'fallback' },
     talkingPoints: [],
-    officialLinks: [
-      { label: 'Formula 1 Official', url: 'https://www.formula1.com',                         icon: '🏎️' },
-      { label: 'Driver Standings',   url: 'https://www.formula1.com/en/results/2026/drivers', icon: '🏆' },
-      { label: 'F1 TV',              url: 'https://f1tv.formula1.com',                        icon: '📺' },
-    ],
+    officialLinks: genericLinks(year),
   }
 }

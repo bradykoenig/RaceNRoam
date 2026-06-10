@@ -48,13 +48,14 @@ export function getFallbackF1Data() {
   const cutoff   = new Date(Date.now() - 4 * 60 * 60 * 1000)
   const next     = calendar.find(e => e.series === 'f1' && new Date(e.date) > cutoff)
 
-  // If no upcoming race in calendar (end of season), show the last one
-  const race = next || calendar.filter(e => e.series === 'f1').at(-1)
-  if (!race) return _hardcoded()
+  // If no upcoming F1 race in calendar (end of season or calendar is outdated), return a
+  // generic placeholder — the live API will provide real data once it's reachable again.
+  if (!next) return _genericPlaceholder()
 
-  const meta     = CIRCUIT_META[race.track] || {}
-  const schedule = buildApproxSchedule(race.date)
-  const country  = race.location?.split(', ').at(-1) || ''
+  const meta     = CIRCUIT_META[next.track] || {}
+  const schedule = buildApproxSchedule(next.date)
+  const country  = next.location?.split(', ').at(-1) || ''
+  const year     = new Date(next.date).getFullYear()
 
   return {
     series:     'f1',
@@ -62,21 +63,21 @@ export function getFallbackF1Data() {
     source:     'fallback',
     lastUpdated: new Date().toISOString(),
     featuredRace: {
-      id:          race.id,
-      name:        race.name,
-      track:       race.track,
-      location:    race.location,
+      id:          next.id,
+      name:        next.name,
+      track:       next.track,
+      location:    next.location,
       country,
-      date:        race.date,
-      raceStart:   race.date,
+      date:        next.date,
+      raceStart:   next.date,
       nextSession: schedule.find(s => new Date(s.startTime) > new Date()) || null,
       status:      'Upcoming',
-      round:       race.round,
-      season:      new Date(race.date).getFullYear(),
+      round:       next.round,
+      season:      year,
     },
     track: {
-      name:     race.track,
-      location: race.location,
+      name:     next.track,
+      location: next.location,
       lat:      meta.lat  || null,
       lon:      meta.lon  || null,
       type:     meta.type || 'Grand Prix Circuit',
@@ -95,29 +96,35 @@ export function getFallbackF1Data() {
     },
     talkingPoints: [],
     officialLinks: [
-      { label: 'Formula 1 Official', url: 'https://www.formula1.com',                         icon: '🏎️' },
-      { label: 'Driver Standings',   url: 'https://www.formula1.com/en/results/2026/drivers', icon: '🏆' },
-      { label: 'F1 TV',              url: 'https://f1tv.formula1.com',                        icon: '📺' },
+      { label: 'Formula 1 Official', url: 'https://www.formula1.com',                               icon: '🏎️' },
+      { label: 'Driver Standings',   url: `https://www.formula1.com/en/results/${year}/drivers`,    icon: '🏆' },
+      { label: 'F1 TV',              url: 'https://f1tv.formula1.com',                              icon: '📺' },
     ],
   }
 }
 
-// Last-resort static entry in case calendar import fails
-function _hardcoded() {
+// Generic placeholder used when the calendar has no future F1 races and when the
+// calendar import itself fails — shows no race-specific data to avoid stale info.
+function _genericPlaceholder() {
+  const year = new Date().getFullYear()
   return {
     series: 'f1', seriesName: 'Formula 1', source: 'fallback',
     lastUpdated: new Date().toISOString(),
-    featuredRace: { name: 'Canadian Grand Prix', track: 'Circuit Gilles Villeneuve',
-      location: 'Montreal, Quebec, Canada', country: 'Canada',
-      date: '2026-06-14T18:00:00Z', raceStart: '2026-06-14T18:00:00Z',
-      status: 'Upcoming', round: 9, season: 2026 },
-    track: { name: 'Circuit Gilles Villeneuve', location: 'Montreal, Quebec, Canada',
-      lat: 45.5048, lon: -73.5258, type: 'Temporary Circuit', laps: 70 },
-    schedule: [], standings: { source: 'unavailable', drivers: [], teams: [] },
-    startingGrid: [], weather: { temperature: null, conditions: 'Unavailable', source: 'fallback' },
+    featuredRace: {
+      name: 'F1 Grand Prix', track: '', location: '', country: '',
+      date: null, raceStart: null, nextSession: null,
+      status: 'Upcoming', round: null, season: year,
+    },
+    track:     { name: '', location: '', lat: null, lon: null, type: 'Grand Prix Circuit' },
+    schedule:  [],
+    standings: { source: 'unavailable', drivers: [], teams: [] },
+    startingGrid: [],
+    weather:   { temperature: null, conditions: 'Unavailable', source: 'fallback' },
     talkingPoints: [],
     officialLinks: [
-      { label: 'Formula 1 Official', url: 'https://www.formula1.com', icon: '🏎️' },
+      { label: 'Formula 1 Official', url: 'https://www.formula1.com',                            icon: '🏎️' },
+      { label: 'Driver Standings',   url: `https://www.formula1.com/en/results/${year}/drivers`, icon: '🏆' },
+      { label: 'F1 TV',              url: 'https://f1tv.formula1.com',                           icon: '📺' },
     ],
   }
 }

@@ -18,21 +18,45 @@ export default function SeriesPage({ series, data, loading, error, onRefresh }) 
   if (!data)   return <div className="container page-wrapper"><LoadingState /></div>
 
   const d  = data.data || data
-  const race      = d.featuredRace
+
+  // Prefer live API race info when available — same source as Stream Mode
+  const lr = liveData?.race?.raceName ? liveData.race : null
+  const race = {
+    ...(d.featuredRace || {}),
+    ...(lr ? {
+      name:       lr.raceName,
+      track:      lr.circuitName  || d.featuredRace?.track,
+      location:   [lr.locality, lr.country].filter(Boolean).join(', ') || d.featuredRace?.location,
+      country:    lr.country      || d.featuredRace?.country,
+      round:      lr.round        ?? d.featuredRace?.round,
+      date:       lr.raceDateTimeUtc || d.featuredRace?.date,
+      raceStart:  lr.raceDateTimeUtc || d.featuredRace?.raceStart,
+      nextSession: liveData.nextSession
+        ? { session: liveData.nextSession.sessionName, startTime: liveData.nextSession.startTime }
+        : d.featuredRace?.nextSession,
+    } : {}),
+  }
   const track     = d.track
-  const schedule  = d.schedule || []
+  // Prefer liveData sessions for schedule (matches Stream Mode source)
+  const schedule  = (liveData?.sessions?.length > 0)
+    ? liveData.sessions.map(s => ({
+        session:   s.sessionName,
+        startTime: s.startTime,
+        status:    s.endTime && new Date(s.endTime) < new Date() ? 'Completed' : 'Upcoming',
+      }))
+    : (d.schedule || [])
   const weather   = d.weather
   const links     = d.officialLinks  || []
   const classes   = d.classes
 
   // Build proper race subtitle from API data
   function getRaceSubtitle() {
-    if (!race) return '2026 Season'
+    if (!race) return `${new Date().getFullYear()} Season`
     const parts = []
     if (race.track && race.track.trim() && race.track !== 'TBD') parts.push(race.track)
     if (race.location && race.location.trim() && race.location !== 'TBD') parts.push(race.location)
     if (race.round) parts.push(`Round ${race.round}`)
-    return parts.length > 0 ? parts.join(' · ') : race.name || '2026 Season'
+    return parts.length > 0 ? parts.join(' · ') : race.name || `${new Date().getFullYear()} Season`
   }
 
   return (

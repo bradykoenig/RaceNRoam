@@ -43,9 +43,25 @@ export async function getCurrentSeasonSchedule() {
 
 export async function getNextRace() {
   const races = await getCurrentSeasonSchedule()
-  // Give a 4-hour grace window after race start so it stays visible during the event
-  const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000)
-  return races.find(r => new Date(r.date) > cutoff) || null
+  if (!races.length) return null
+  const now = Date.now()
+
+  // Step 1: return any race whose weekend window (race ±4 days) contains right now
+  for (const r of races) {
+    if (!r.date) continue
+    const raceMs = new Date(r.date).getTime()
+    if (now >= raceMs - 4 * 86_400_000 && now <= raceMs + 86_400_000) return r
+  }
+
+  // Step 2: first race whose DATE (date-only, like live.js) is >= yesterday
+  const yesterday = now - 86_400_000
+  for (const r of races) {
+    if (!r.date) continue
+    const dateOnly = r.date.includes('T') ? r.date.split('T')[0] : r.date
+    if (new Date(dateOnly).getTime() >= yesterday) return r
+  }
+
+  return races[races.length - 1] // last race in the season as final fallback
 }
 
 export async function getDriverStandings() {
