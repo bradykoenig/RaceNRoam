@@ -261,11 +261,22 @@ export async function onRequestGet({ env }) {
             }
           }
 
-          // Get weather from most recent session
-          const latestSess = sessions.at(-1)
-          if (latestSess?.session_key) {
-            const raw = await getSessionWeather(latestSess.session_key).catch(() => null)
-            of1Weather = normalizeWeather(raw)
+          // Only use OpenF1 weather if its meeting matches the Jolpica next race (same circuit/country)
+          const jolpicaCountry = (jolpicaRace?.country || '').toLowerCase()
+          const of1MeetingCountry = (meeting.country_name || '').toLowerCase()
+          const circuitMatch = !jolpicaRace ||
+            jolpicaCountry === of1MeetingCountry ||
+            (jolpicaRace?.circuit || '').toLowerCase().includes(of1MeetingCountry) ||
+            of1MeetingCountry.includes(jolpicaCountry)
+
+          if (circuitMatch) {
+            const latestSess = sessions.at(-1)
+            if (latestSess?.session_key) {
+              const raw = await getSessionWeather(latestSess.session_key).catch(() => null)
+              of1Weather = normalizeWeather(raw)
+            }
+          } else {
+            console.log(`[f1] Skipping OpenF1 weather — meeting (${meeting.country_name}) doesn't match next race (${jolpicaRace?.country})`)
           }
         }
       }

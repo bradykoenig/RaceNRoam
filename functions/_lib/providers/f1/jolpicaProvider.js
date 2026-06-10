@@ -42,26 +42,10 @@ export async function getCurrentSeasonSchedule() {
 }
 
 export async function getNextRace() {
-  const data = await get(`/${YEAR}/next.json`)
-  const race = safeGet(data, 'MRData', 'RaceTable', 'Races', 0)
-  if (!race) return null
-  return {
-    round:    parseInt(race.round, 10),
-    name:     race.raceName,
-    circuit:  race.Circuit?.circuitName,
-    location: `${race.Circuit?.Location?.locality}, ${race.Circuit?.Location?.country}`,
-    lat:      parseFloat(race.Circuit?.Location?.lat),
-    lon:      parseFloat(race.Circuit?.Location?.long),
-    date:     race.date && race.time ? `${race.date}T${race.time}` : race.date,
-    country:  race.Circuit?.Location?.country,
-    sessions: {
-      fp1:       race.FirstPractice   ? `${race.FirstPractice.date}T${race.FirstPractice.time}`   : null,
-      fp2:       race.SecondPractice  ? `${race.SecondPractice.date}T${race.SecondPractice.time}` : null,
-      fp3:       race.ThirdPractice   ? `${race.ThirdPractice.date}T${race.ThirdPractice.time}`   : null,
-      qualifying:race.Qualifying      ? `${race.Qualifying.date}T${race.Qualifying.time}`         : null,
-      sprint:    race.Sprint          ? `${race.Sprint.date}T${race.Sprint.time}`                  : null,
-    },
-  }
+  const races = await getCurrentSeasonSchedule()
+  // Give a 4-hour grace window after race start so it stays visible during the event
+  const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000)
+  return races.find(r => new Date(r.date) > cutoff) || null
 }
 
 export async function getDriverStandings() {
