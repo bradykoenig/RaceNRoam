@@ -5,8 +5,8 @@
 // the embedded calendar is only a safety net for the rare "all APIs down" scenario.
 
 const F1_CALENDAR = [
-  { round: 9,  name: 'Canadian Grand Prix',          track: 'Circuit Gilles Villeneuve',       location: 'Montreal, Quebec, Canada',              date: '2026-06-14T18:00:00Z', lat: 45.5048,  lon: -73.5258  },
-  { round: 10, name: 'Spanish Grand Prix',            track: 'Circuit de Barcelona-Catalunya',  location: 'Barcelona, Spain',                      date: '2026-06-28T13:00:00Z', lat: 41.57,    lon: 2.2611    },
+  { round: 9,  name: 'Spanish Grand Prix',            track: 'Circuit de Barcelona-Catalunya',  location: 'Barcelona, Spain',                      date: '2026-06-21T13:00:00Z', lat: 41.57,    lon: 2.2611    },
+  { round: 10, name: 'Canadian Grand Prix',           track: 'Circuit Gilles Villeneuve',       location: 'Montreal, Quebec, Canada',              date: '2026-06-28T18:00:00Z', lat: 45.5048,  lon: -73.5258  },
   { round: 11, name: 'Austrian Grand Prix',           track: 'Red Bull Ring',                   location: 'Spielberg, Austria',                    date: '2026-07-05T13:00:00Z', lat: 47.2197,  lon: 14.7647   },
   { round: 12, name: 'British Grand Prix',            track: 'Silverstone Circuit',             location: 'Silverstone, UK',                       date: '2026-07-12T13:00:00Z', lat: 52.0786,  lon: -1.0169   },
   { round: 13, name: 'Hungarian Grand Prix',          track: 'Hungaroring',                     location: 'Mogyoród, Hungary',                     date: '2026-07-26T13:00:00Z', lat: 47.5789,  lon: 19.2486   },

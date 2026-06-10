@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Twitch, Youtube } from 'lucide-react'
 import { SERIES_META } from '../lib/api/endpoints'
 import { getSeries } from '../lib/api/client'
+import { useLiveRace } from '../hooks/useLiveRace'
 import Countdown from '../components/Countdown'
 import StatusBadge from '../components/StatusBadge'
 
@@ -27,12 +28,23 @@ function HubSeriesCard({ slug, path }) {
   const meta = SERIES_META[slug] || {}
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
+  const { liveData } = useLiveRace(slug)
 
   useEffect(() => {
     getSeries(slug).then(r => { setData(r); setLoading(false) })
   }, [slug])
 
-  const race = data?.data?.featuredRace || null
+  const baseRace = data?.data?.featuredRace || null
+  // Prefer live API race (same source as Stream Mode / Series page)
+  const lr = liveData?.race?.raceName ? liveData.race : null
+  const race = baseRace ? {
+    ...baseRace,
+    ...(lr ? {
+      name:  lr.raceName,
+      round: lr.round ?? baseRace.round,
+      date:  lr.raceDateTimeUtc || baseRace.date,
+    } : {}),
+  } : (lr ? { name: lr.raceName, round: lr.round, date: lr.raceDateTimeUtc, status: 'Upcoming' } : null)
 
   return (
     <Link to={path} className="hub-card" style={{ '--hub-color': meta.color }}>
