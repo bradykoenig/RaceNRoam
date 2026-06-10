@@ -50,7 +50,7 @@ function HubSeriesCard({ slug, path }) {
         <div style={{ padding: 'var(--sp-2) 0 var(--sp-4)' }}><div className="spinner-sm" /></div>
       ) : race ? (
         <>
-          <p className="hub-card-race">{race.name} · Rd {race.round}</p>
+          <p className="hub-card-race">{race.name}{race.round ? ` · Rd ${race.round}` : ''}</p>
           <div className="hub-card-countdown">
             <Countdown targetDate={race.date} size="inline" />
           </div>
