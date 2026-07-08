@@ -61,6 +61,7 @@ export const PRODUCTS: Product[] = [
     price: 25,
     category: "Headwear",
     badge: "HOT",
+    stockNote: "Only 2 left",
     icon: "hat",
     image: pitLaneSnapbackImg,
   },

@@ -56,7 +56,10 @@ export const Products = () => {
               </div>
               <div className="p-5 border-t border-grey-mid">
                 <div className="font-tech text-[9px] tracking-[3px] text-primary-bright uppercase mb-1.5">{product.category}</div>
-                <h3 className="font-body text-lg font-bold tracking-wider text-foreground mb-2.5">{product.name}</h3>
+                <h3 className="font-body text-lg font-bold tracking-wider text-foreground mb-1">{product.name}</h3>
+                {product.stockNote && (
+                  <p className="font-tech text-[9px] tracking-[2px] uppercase text-amber-400 mb-2">⚠ {product.stockNote}</p>
+                )}
                 {product.sizes && (
                   <div className="flex gap-1 mb-3 flex-wrap">
                     {product.sizes.map((s) => {
