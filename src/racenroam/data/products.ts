@@ -60,7 +60,7 @@ export const PRODUCTS: Product[] = [
     name: "Pit Lane Snapback",
     price: 25,
     category: "Headwear",
-    badge: "HOT",
+    badge: "2 LEFT",
     stockNote: "Only 2 left",
     icon: "hat",
     image: pitLaneSnapbackImg,
