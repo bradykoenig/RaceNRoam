@@ -7,7 +7,10 @@ const YEAR = new Date().getFullYear()
 
 async function get(path) {
   const url = `${BASE}${path}`
-  const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+  const res = await fetch(url, {
+    headers: { 'Accept': 'application/json' },
+    cache: 'no-store',   // bypass Cloudflare edge cache — always get fresh Jolpica data
+  })
   if (!res.ok) throw new Error(`Jolpica ${path} → HTTP ${res.status}`)
   return res.json()
 }
@@ -39,26 +42,26 @@ export async function getCurrentSeasonSchedule() {
 }
 
 export async function getNextRace() {
-  const data = await get(`/${YEAR}/next.json`)
-  const race = safeGet(data, 'MRData', 'RaceTable', 'Races', 0)
-  if (!race) return null
-  return {
-    round:    parseInt(race.round, 10),
-    name:     race.raceName,
-    circuit:  race.Circuit?.circuitName,
-    location: `${race.Circuit?.Location?.locality}, ${race.Circuit?.Location?.country}`,
-    lat:      parseFloat(race.Circuit?.Location?.lat),
-    lon:      parseFloat(race.Circuit?.Location?.long),
-    date:     race.date && race.time ? `${race.date}T${race.time}` : race.date,
-    country:  race.Circuit?.Location?.country,
-    sessions: {
-      fp1:       race.FirstPractice   ? `${race.FirstPractice.date}T${race.FirstPractice.time}`   : null,
-      fp2:       race.SecondPractice  ? `${race.SecondPractice.date}T${race.SecondPractice.time}` : null,
-      fp3:       race.ThirdPractice   ? `${race.ThirdPractice.date}T${race.ThirdPractice.time}`   : null,
-      qualifying:race.Qualifying      ? `${race.Qualifying.date}T${race.Qualifying.time}`         : null,
-      sprint:    race.Sprint          ? `${race.Sprint.date}T${race.Sprint.time}`                  : null,
-    },
+  const races = await getCurrentSeasonSchedule()
+  if (!races.length) return null
+  const now = Date.now()
+
+  // Step 1: return any race whose weekend window (race ±4 days) contains right now
+  for (const r of races) {
+    if (!r.date) continue
+    const raceMs = new Date(r.date).getTime()
+    if (now >= raceMs - 4 * 86_400_000 && now <= raceMs + 86_400_000) return r
   }
+
+  // Step 2: first race whose DATE (date-only, like live.js) is >= yesterday
+  const yesterday = now - 86_400_000
+  for (const r of races) {
+    if (!r.date) continue
+    const dateOnly = r.date.includes('T') ? r.date.split('T')[0] : r.date
+    if (new Date(dateOnly).getTime() >= yesterday) return r
+  }
+
+  return races[races.length - 1] // last race in the season as final fallback
 }
 
 export async function getDriverStandings() {

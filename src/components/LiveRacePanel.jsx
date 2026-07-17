@@ -280,7 +280,7 @@ export default function LiveRacePanel({ liveData, series, compact = false }) {
         display:'flex', alignItems:'center', gap:'var(--sp-3)',
       }}>
         <span style={{ color:'var(--live)' }}>●</span>
-        Live via OpenF1 · updates every 20s · covers FP1 FP2 FP3 · Sprint · Qualifying · Race
+        Live via OpenF1 · updates every ~5s · covers FP1 FP2 FP3 · Sprint · Qualifying · Race
       </div>
     </div>
   )

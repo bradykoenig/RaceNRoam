@@ -1,31 +1,49 @@
 // OpenF1 API provider – https://openf1.org/
 // Free, no API key required. Real-time and historical F1 data.
-// All fetch calls use the Workers-native fetch() API.
+// Uses Cloudflare Cache API to prevent rate limits during live streams.
+
+import { cachedFetchJson } from '../../utils/cfCache.js'
 
 const BASE = 'https://api.openf1.org/v1'
 const YEAR = new Date().getFullYear()
 
-async function get(path, params = {}) {
+// TTLs: meetings/sessions cached 10min, live data 20sec
+const TTL = {
+  meetings: 600,
+  sessions: 600,
+  weather: 20,
+  drivers: 300,
+  position: 20,
+  intervals: 20,
+  race_control: 20,
+}
+
+async function get(path, params = {}, ttl) {
   const qs = new URLSearchParams(params).toString()
   const url = `${BASE}${path}${qs ? `?${qs}` : ''}`
-  const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
-  if (!res.ok) throw new Error(`OpenF1 ${path} → HTTP ${res.status}`)
-  return res.json()
+  const cacheTtl = ttl ?? TTL[path.replace('/', '')] ?? 30
+  try {
+    return await cachedFetchJson(url, {}, cacheTtl)
+  } catch (err) {
+    throw new Error(`OpenF1 ${path} → ${err.message}`)
+  }
 }
 
 export async function getLatestMeeting() {
   const meetings = await get('/meetings', { year: YEAR })
   if (!meetings?.length) return null
   const now = Date.now()
-  // Find the closest meeting to today (either upcoming or most recently past)
-  return meetings.reduce((best, m) => {
-    const mt = new Date(m.date_start).getTime()
-    if (!best) return m
-    const bt = new Date(best.date_start).getTime()
-    const diffM = Math.abs(mt - now)
-    const diffB = Math.abs(bt - now)
-    return diffM < diffB ? m : best
-  }, null)
+
+  // First try to find the next upcoming meeting
+  const upcoming = meetings
+    .filter(m => new Date(m.date_start).getTime() > now)
+    .sort((a, b) => new Date(a.date_start) - new Date(b.date_start))
+
+  if (upcoming.length > 0) return upcoming[0]
+
+  // If no upcoming meetings, return the most recent past meeting
+  return meetings
+    .sort((a, b) => new Date(b.date_start) - new Date(a.date_start))[0]
 }
 
 export async function getMeetingByKey(meetingKey) {
@@ -33,8 +51,16 @@ export async function getMeetingByKey(meetingKey) {
   return meetings?.[0] || null
 }
 
+export async function getAllSessionsForMeeting(meetingKey) {
+  try {
+    const sessions = await get('/sessions', { meeting_key: meetingKey })
+    if (!sessions?.length) return []
+    return sessions.sort((a, b) => new Date(a.date_start) - new Date(b.date_start))
+  } catch { return [] }
+}
+
 export async function getCurrentOrNextSession(meetingKey) {
-  const sessions = await get('/sessions', { meeting_key: meetingKey, year: YEAR })
+  const sessions = await getAllSessionsForMeeting(meetingKey)
   if (!sessions?.length) return null
   const now = Date.now()
   const upcoming = sessions.filter(s => new Date(s.date_end).getTime() > now)

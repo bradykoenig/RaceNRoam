@@ -7,6 +7,7 @@ import { getFallbackImsaWecData }from '../_lib/providers/imsaWec/imsaWecFallback
 import { getFallbackMotoGPData } from '../_lib/providers/motogp/motogpFallbackProvider.js'
 
 const SERIES_ORDER = ['imsa-wec', 'f1', 'nascar', 'indycar', 'motogp']
+const BASE_URL = 'https://racenroam.com'
 
 const FALLBACK_MAP = {
   'f1':       getFallbackF1Data,
@@ -22,11 +23,30 @@ function getNextFromSeries(data) {
   return { series: data.series, seriesName: data.seriesName, raceDate: new Date(race.date) }
 }
 
+async function fetchSeriesData(series, baseUrl = BASE_URL) {
+  try {
+    const url = `${baseUrl}/api/series/${series}`
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    })
+    if (!response.ok) return null
+    const json = await response.json()
+    return json.data || json
+  } catch (err) {
+    console.error(`[today] Failed to fetch ${series}:`, err.message)
+    return null
+  }
+}
+
 export async function onRequestGet({ env, request }) {
-  const allData = SERIES_ORDER.map(s => {
-    const fn = FALLBACK_MAP[s]
-    return fn ? fn() : null
-  }).filter(Boolean)
+  // Try to fetch real data from each series endpoint
+  const allData = await Promise.all(
+    SERIES_ORDER.map(async (s) => {
+      const data = await fetchSeriesData(s)
+      return data || FALLBACK_MAP[s]?.()
+    })
+  ).then(results => results.filter(Boolean))
 
   const now = Date.now()
   const window = 1000 * 60 * 60 * 6 // 6 hours
@@ -48,7 +68,7 @@ export async function onRequestGet({ env, request }) {
     return buildFallbackResponse(getFallbackF1Data(), 'today', 'No upcoming race data available.')
   }
 
-  return buildFallbackResponse(featured, 'today', 'Using local fallback data. API calls happen per-series.')
+  return buildFallbackResponse(featured, 'today', 'Aggregated from real series APIs')
 }
 
 export async function onRequestOptions() { return corsOptionsResponse() }

@@ -93,7 +93,12 @@ export async function getStandings(series) {
 }
 
 export async function getLiveData(series) {
-  return apiGet(ENDPOINTS.live(series))
+  // Longer timeout — CF function needs to auth + fetch 9 endpoints on a cold start
+  try {
+    const res = await fetchWithTimeout(ENDPOINTS.live(series), 20_000)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await res.json()
+  } catch { return null }
 }
 
 export async function getStreamMode(series) {

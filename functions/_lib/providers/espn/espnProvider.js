@@ -5,6 +5,7 @@
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports/racing'
 
 const LEAGUE = {
+  'f1':       'f1',
   'nascar':   'nascar-premier',
   'indycar':  'indycar',
   'motogp':   'moto-gp',

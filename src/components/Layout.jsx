@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Outlet, Link } from 'react-router-dom'
 import Navbar from './Navbar'
 
@@ -73,6 +74,13 @@ function SocialButton({ social }) {
 }
 
 export default function Layout() {
+  useEffect(() => {
+    document.title = 'RaceNRoam Live Race Hub'
+    return () => {
+      document.title = 'RaceNRoam'
+    }
+  }, [])
+
   return (
     <>
       <Navbar />

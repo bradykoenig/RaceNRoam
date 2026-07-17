@@ -1,11 +1,11 @@
 // Utility: Build consistent, cache-controlled API responses for Cloudflare Functions
 
 const CACHE_PRESETS = {
-  live:      30,     // live session / timing: 30 seconds
-  weather:   600,    // weather: 10 minutes
-  standings: 1800,   // standings: 30 minutes
-  schedule:  3600,   // schedules: 1 hour
-  static:    86400,  // static race info: 24 hours
+  live:      30,    // live session / timing: 30 seconds
+  weather:   300,   // weather: 5 minutes
+  standings: 300,   // standings + next race: 5 minutes (was 30 min — caused stale race data)
+  schedule:  300,   // schedules: 5 minutes
+  static:    3600,  // static info: 1 hour
 }
 
 export function buildResponse(body, options = {}) {
@@ -16,7 +16,7 @@ export function buildResponse(body, options = {}) {
     status,
     headers: {
       'Content-Type':                'application/json',
-      'Cache-Control':               `public, s-maxage=${ttl}, stale-while-revalidate=${ttl * 2}`,
+      'Cache-Control':               `public, s-maxage=${ttl}, stale-while-revalidate=60`,
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods':'GET, OPTIONS',
       'X-Cache-TTL':                 String(ttl),

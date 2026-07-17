@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { useCountdown } from '../hooks/useCountdown'
 
 export default function Countdown({ targetDate, size = 'normal' }) {
@@ -24,13 +25,13 @@ export default function Countdown({ targetDate, size = 'normal' }) {
   return (
     <div className={cls}>
       {units.map((u, i) => (
-        <>
-          <div key={u.l} className="countdown-unit">
+        <Fragment key={u.l}>
+          <div className="countdown-unit">
             <span className="countdown-digit">{String(u.v).padStart(2,'0')}</span>
             <span className="countdown-label">{u.l}</span>
           </div>
-          {i < units.length - 1 && <span key={`sep-${i}`} className="countdown-sep">:</span>}
-        </>
+          {i < units.length - 1 && <span className="countdown-sep">:</span>}
+        </Fragment>
       ))}
     </div>
   )

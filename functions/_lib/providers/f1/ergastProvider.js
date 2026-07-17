@@ -1,23 +1,36 @@
-// Ergast F1 API - Free, reliable schedule data (no rate limits)
-// Used as backup when Jolpica is unavailable
+// Ergast F1 API - Free, reliable schedule data (auto-updating, no manual maintenance)
+// Fetches current season schedule live from the API
 
 const ERGAST_BASE = 'https://ergast.com/api/f1'
 
-export async function getErgastNextRace() {
+async function getCurrentF1Season() {
   try {
-    const year = new Date().getFullYear()
-    const response = await fetch(`${ERGAST_BASE}/${year}/races.json?limit=100`, {
-      headers: { 'User-Agent': 'RaceNRoam/1.0' }
-    })
+    // Try current year first
+    let year = new Date().getFullYear()
+    let response = await fetch(`${ERGAST_BASE}/${year}.json`, { headers: { 'User-Agent': 'RaceNRoam/1.0' } })
 
     if (!response.ok) return null
 
     const data = await response.json()
-    if (!data.MRData?.RaceTable?.Races) return null
+    if (!data.MRData?.RaceTable?.Races || data.MRData.RaceTable.Races.length === 0) {
+      return null
+    }
+
+    return data.MRData.RaceTable
+  } catch (err) {
+    console.error('Error fetching Ergast season:', err.message)
+    return null
+  }
+}
+
+export async function getErgastNextRace() {
+  try {
+    const raceTable = await getCurrentF1Season()
+    if (!raceTable?.Races) return null
 
     const now = new Date()
-    const nextRace = data.MRData.RaceTable.Races.find(race => {
-      const raceDate = new Date(`${race.date}T${race.time || '00:00:00'}Z`)
+    const nextRace = raceTable.Races.find(race => {
+      const raceDate = new Date(`${race.date}T${race.time || '14:00:00'}Z`)
       return raceDate > now
     })
 
@@ -41,7 +54,7 @@ export async function getErgastNextRace() {
       }
     }
   } catch (err) {
-    console.error('Ergast API error:', err.message)
+    console.error('Ergast next race error:', err.message)
     return null
   }
 }

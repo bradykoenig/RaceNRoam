@@ -1,31 +1,35 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { getSeries } from '../lib/api/client'
 import { SERIES_META } from '../lib/api/endpoints'
-import { useAutoRefresh } from '../hooks/useAutoRefresh'
 import { useLiveRace } from '../hooks/useLiveRace'
 import Countdown from '../components/Countdown'
-import LiveRacePanel from '../components/LiveRacePanel'
 import RaceControlFeed from '../components/RaceControlFeed'
 import TrackMap from '../components/TrackMap'
 
-const DEFAULT_SERIES = 'f1'
-const REFRESH_MS = 45 * 1000
+// ── Formatting helpers ────────────────────────────────────────────────────────
 
-// ── Helpers ──────────────────────────────────────────────────
-
-function fmt(ts) {
-  if (!ts) return ''
+function fmtTime(iso) {
+  if (!iso) return ''
   try {
     return new Intl.DateTimeFormat('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric',
       hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
-    }).format(new Date(ts))
+    }).format(new Date(iso))
   } catch { return '' }
 }
 
-function cToF(c) { return Math.round(c * 9 / 5 + 32) }
+function fmtShortTime(iso) {
+  if (!iso) return ''
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    }).format(new Date(iso))
+  } catch { return '' }
+}
 
-// ── Topbar (shared between live and idle layouts) ─────────────
+function cToF(c) { return Math.round((c ?? 0) * 9 / 5 + 32) }
+
+// ── Shared: topbar ────────────────────────────────────────────────────────────
 
 function StreamTopbar({ series, meta, refreshing, lastFetch, onRefresh }) {
   return (
@@ -40,10 +44,7 @@ function StreamTopbar({ series, meta, refreshing, lastFetch, onRefresh }) {
             color: '#aaa', fontSize: '0.75rem', fontWeight: 700,
             fontFamily: 'var(--font-display)', textTransform: 'uppercase',
             letterSpacing: '0.06em', textDecoration: 'none',
-            transition: 'all 120ms ease',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background='#1e1e1e'; e.currentTarget.style.color='#fff'; e.currentTarget.style.borderColor='#444' }}
-          onMouseLeave={e => { e.currentTarget.style.background='#111'; e.currentTarget.style.color='#aaa'; e.currentTarget.style.borderColor='#2a2a2a' }}
         >
           ← Hub
         </Link>
@@ -52,7 +53,6 @@ function StreamTopbar({ series, meta, refreshing, lastFetch, onRefresh }) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
-        {/* Series switcher */}
         <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
           {Object.values(SERIES_META).map(m => (
             <Link
@@ -62,194 +62,462 @@ function StreamTopbar({ series, meta, refreshing, lastFetch, onRefresh }) {
                 padding: '2px 8px', borderRadius: 'var(--r-full)',
                 fontSize: '0.65rem', fontWeight: 700, textDecoration: 'none',
                 background: m.slug === series ? m.color : '#111',
-                color:      m.slug === series ? '#fff' : '#444',
+                color:      m.slug === series ? '#fff'   : '#444',
                 border:     `1px solid ${m.slug === series ? m.color : '#222'}`,
-                transition: 'all var(--t-fast)',
               }}
             >
               {m.shortName}
             </Link>
           ))}
         </div>
-
         <button onClick={onRefresh} className="stream-refresh-btn" disabled={refreshing}>
-          <span style={{ display:'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
-          {lastFetch ? fmt(lastFetch) : 'Refresh'}
+          <span style={{ display: 'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
+          {lastFetch ? fmtShortTime(lastFetch.toISOString()) : 'Refresh'}
         </button>
       </div>
     </div>
   )
 }
 
-// ── Live Race Layout ──────────────────────────────────────────
-// Shown when a session is actively running (isLive = true)
+// ── Shared: weather bar ───────────────────────────────────────────────────────
 
-function LiveStreamBody({ liveData, series, meta }) {
-  const { session, positions = [], locations = [], raceControl = [], weather } = liveData
-  const isRace = session?.category === 'race' || session?.category === 'sprint'
-  const isQual = session?.category === 'qualifying' || session?.category === 'sprint-qualifying'
+function WeatherBar({ weather }) {
+  if (!weather) return null
+  const air   = weather.airTemp   != null ? Math.round(weather.airTemp)   : null
+  const track = weather.trackTemp != null ? Math.round(weather.trackTemp) : null
+  return (
+    <div style={{
+      display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap',
+      fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: '#555',
+    }}>
+      {air   != null && <span>Air {air}°C / {cToF(air)}°F</span>}
+      {track != null && <span>Track {track}°C / {cToF(track)}°F</span>}
+      {weather.windSpeed != null && <span>💨 {Math.round(weather.windSpeed)} km/h</span>}
+      <span>{weather.rainfall ? '🌧️ Rain' : '☀️ Dry'}</span>
+    </div>
+  )
+}
 
-  const FLAG_COLOR = {
-    green:'#22c55e', yellow:'#f59e0b', red:'#ef4444',
-    sc:'#f59e0b', vsc:'#f59e0b', checkered:'#fff', white:'#fff',
+// ── Shared: track status banner ───────────────────────────────────────────────
+
+const TS_STYLE = {
+  yellow: { bg: '#f5c51822', border: '#f5c518', text: '#f5c518' },
+  red:    { bg: '#e8002d22', border: '#e8002d', text: '#e8002d' },
+  sc:     { bg: '#f9731622', border: '#f97316', text: '#f97316' },
+  vsc:    { bg: '#f9731622', border: '#f97316', text: '#f97316' },
+}
+
+function TrackStatusBanner({ trackStatus }) {
+  const style = TS_STYLE[trackStatus?.type]
+  if (!style) return null
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+      padding: '8px 24px', background: style.bg, borderBottom: `2px solid ${style.border}`,
+      animation: trackStatus.type === 'red' ? 'pulseLive 1s step-start infinite' : 'none',
+    }}>
+      <span style={{ fontSize: 14, color: style.text }}>⚑</span>
+      <span style={{
+        color: style.text, fontWeight: 900, fontSize: '0.82rem',
+        fontFamily: 'var(--font-display)', letterSpacing: '0.12em', textTransform: 'uppercase',
+      }}>
+        {trackStatus.label}
+      </span>
+    </div>
+  )
+}
+
+// ── Shared: leaderboard ───────────────────────────────────────────────────────
+
+const SECTOR_BG = {
+  purple: '#7c3aed', green: '#16a34a', yellow: '#713f12', grey: '#1a1a1a',
+}
+const SECTOR_FG = {
+  purple: '#fff', green: '#fff', yellow: '#fde68a', grey: '#333',
+}
+
+function SectorCell({ sector }) {
+  const bg = SECTOR_BG[sector?.color] || SECTOR_BG.grey
+  const fg = SECTOR_FG[sector?.color] || SECTOR_FG.grey
+  return (
+    <span style={{
+      background: bg, color: fg, fontSize: 9, fontFamily: 'monospace',
+      padding: '1px 3px', borderRadius: 2, display: 'inline-block',
+      minWidth: 42, textAlign: 'center',
+    }}>
+      {sector?.time || '—'}
+    </span>
+  )
+}
+
+const TYRE_COLOR  = { S: '#e8002d', M: '#f5c518', H: '#d4d4d4', I: '#22c55e', W: '#3b82f6' }
+const TYRE_LETTER = { SOFT: 'S', MEDIUM: 'M', HARD: 'H', INTERMEDIATE: 'I', WET: 'W' }
+
+function Leaderboard({ leaderboard, sessionType, selectedDriver, onSelect }) {
+  const isRace = sessionType === 'Race' || sessionType === 'Sprint'
+
+  if (!leaderboard.length) {
+    return (
+      <p style={{ color: '#2a2a2a', fontSize: 12, textAlign: 'center', padding: '24px 0', margin: 0 }}>
+        Waiting for session data…
+      </p>
+    )
   }
-  const flagColor = FLAG_COLOR[session?.flag] || null
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '22px 28px 100px 22px 60px 44px 44px 44px',
+        gap: 4, padding: '3px 8px',
+        fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: '#2a2a2a',
+        borderBottom: '1px solid #1a1a1a',
+      }}>
+        <span>P</span><span>#</span><span>DRIVER</span><span>T</span>
+        <span style={{ textAlign: 'right' }}>{isRace ? 'GAP' : 'BEST'}</span>
+        <span style={{ textAlign: 'center' }}>S1</span>
+        <span style={{ textAlign: 'center' }}>S2</span>
+        <span style={{ textAlign: 'center' }}>S3</span>
+      </div>
+
+      {leaderboard.slice(0, 20).map(p => {
+        const tLetter = TYRE_LETTER[p.compound] || '?'
+        const sel     = selectedDriver === p.number
+        return (
+          <div
+            key={p.number}
+            onClick={() => onSelect(sel ? null : p.number)}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '22px 28px 100px 22px 60px 44px 44px 44px',
+              alignItems: 'center', gap: 4, padding: '5px 8px',
+              cursor: 'pointer',
+              background:   sel ? '#1a1000' : '#111',
+              borderLeft:   `2px solid ${p.inPit ? '#222' : p.teamColor || '#444'}`,
+              borderBottom: '1px solid #161616',
+              opacity: p.inPit ? 0.5 : 1,
+            }}
+          >
+            <span style={{ color: '#444', fontFamily: 'monospace', fontSize: 12 }}>{p.pos}</span>
+
+            <span style={{
+              background: p.teamColor || '#444', color: '#fff',
+              fontSize: 9, fontWeight: 700, fontFamily: 'monospace',
+              borderRadius: 2, padding: '1px 3px', textAlign: 'center',
+            }}>
+              {p.number}
+            </span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+              <span style={{ color: p.inPit ? '#444' : '#ddd', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                {p.short || p.driver}
+              </span>
+              {p.inPit       && <span style={{ color: '#e63946', fontSize: 8, fontWeight: 700 }}>PIT</span>}
+              {p.isPitOutLap && <span style={{ color: '#22c55e', fontSize: 8 }}>OUT</span>}
+            </div>
+
+            <span style={{ color: TYRE_COLOR[tLetter] || '#444', fontSize: 10, fontWeight: 700, textAlign: 'center', fontFamily: 'monospace' }}>
+              {p.compound ? tLetter : '—'}
+              {p.tyreAge != null && <span style={{ fontSize: 8, color: '#555' }}>{p.tyreAge}</span>}
+            </span>
+
+            <span style={{ color: '#7ecff4', fontFamily: 'monospace', fontSize: 10, textAlign: 'right' }}>
+              {isRace
+                ? (p.pos === 1 ? 'LEADER' : (p.gap || '—'))
+                : (p.fastestLap || '—')}
+            </span>
+
+            <div style={{ textAlign: 'center' }}><SectorCell sector={p.sectors?.[0]} /></div>
+            <div style={{ textAlign: 'center' }}><SectorCell sector={p.sectors?.[1]} /></div>
+            <div style={{ textAlign: 'center' }}><SectorCell sector={p.sectors?.[2]} /></div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Shared: telemetry ─────────────────────────────────────────────────────────
+
+function TelemetryBar({ label, value, max, color }) {
+  const pct = Math.min(100, Math.max(0, ((value ?? 0) / max) * 100))
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ color: '#333', fontSize: 9, fontFamily: 'monospace', width: 18, textAlign: 'right' }}>{label}</span>
+      <div style={{ flex: 1, background: '#1a1a1a', height: 6, borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width 0.4s' }} />
+      </div>
+      <span style={{ color: '#444', fontSize: 9, fontFamily: 'monospace', width: 28, textAlign: 'right' }}>
+        {Math.round(value ?? 0)}
+      </span>
+    </div>
+  )
+}
+
+function TelemetryPanel({ driver }) {
+  const tel = driver?.telemetry
+  if (!driver) {
+    return <p style={{ color: '#2a2a2a', fontSize: 11, margin: 0, padding: '12px 0', textAlign: 'center' }}>Click a driver to view telemetry</p>
+  }
+  if (!tel) {
+    return <p style={{ color: '#2a2a2a', fontSize: 11, margin: 0, padding: '12px 0', textAlign: 'center' }}>No telemetry for #{driver.number}</p>
+  }
+  return (
+    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        {[['km/h', tel.speed], ['GEAR', tel.gear]].map(([lbl, val]) => (
+          <div key={lbl} style={{ textAlign: 'center', minWidth: 42 }}>
+            <div style={{ color: '#fff', fontSize: lbl === 'km/h' ? 22 : 16, fontFamily: 'monospace', fontWeight: 900, lineHeight: 1 }}>
+              {val ?? '—'}
+            </div>
+            <div style={{ color: '#333', fontSize: 9, letterSpacing: '0.08em', marginTop: 2 }}>{lbl}</div>
+          </div>
+        ))}
+        <div style={{
+          padding: '4px 10px', borderRadius: 3, textAlign: 'center',
+          background: tel.drs ? '#22c55e22' : '#1a1a1a',
+          border: `1px solid ${tel.drs ? '#22c55e' : '#222'}`,
+        }}>
+          <div style={{ color: tel.drs ? '#22c55e' : '#333', fontSize: 10, fontWeight: 700 }}>DRS</div>
+          <div style={{ color: tel.drs ? '#22c55e' : '#333', fontSize: 9 }}>{tel.drs ? 'OPEN' : 'CLOSED'}</div>
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 140, display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <TelemetryBar label="THR" value={tel.throttle ?? 0} max={100} color="#22c55e" />
+        <TelemetryBar label="BRK" value={tel.brake    ?? 0} max={100} color="#e8002d" />
+      </div>
+    </div>
+  )
+}
+
+// ── Shared: schedule list ─────────────────────────────────────────────────────
+
+function SessionSchedule({ sessions, nextSessionStart }) {
+  const now = Date.now()
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {sessions.map((s, i) => {
+        const start  = new Date(s.startTime).getTime()
+        const isNext = s.startTime === nextSessionStart
+        const isNow  = start <= now && now <= new Date(s.endTime).getTime() + 15 * 60_000
+        const isPast = start < now && !isNow && !isNext
+        const badgeCls = isNow ? ' live' : isNext ? ' next' : ''
+        return (
+          <div
+            key={i}
+            className={`stream-sched-row${isNext ? ' next' : ''}`}
+            style={{ opacity: isPast ? 0.4 : 1 }}
+          >
+            <div>
+              <div className="stream-sched-name">{s.sessionName}</div>
+              <div className="stream-sched-time">{fmtTime(s.startTime)}</div>
+            </div>
+            <span className={`stream-sched-badge${badgeCls}`}>
+              {isNow  ? '● LIVE'  :
+               isNext ? 'NEXT'    :
+               isPast ? 'DONE'    : 'UPCOMING'}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── MODE: pre_session ─────────────────────────────────────────────────────────
+
+function PreSessionView({ data }) {
+  const { race, sessions, nextSession, weather } = data
+
+  return (
+    <div className="stream-body" style={{ display: 'flex', flexDirection: 'column' }}>
+
+      {/* Hero */}
+      <div className="stream-hero">
+        {race?.raceName && <div className="stream-race-title">{race.raceName}</div>}
+        <div className="stream-track">
+          {[race?.circuitName, race?.locality, race?.country].filter(Boolean).join(' · ')}
+          {race?.round ? ` · Round ${race.round}` : ''}
+        </div>
+        {weather && (
+          <div style={{ fontSize: '0.8rem', color: '#555', margin: '0 0 var(--sp-4)' }}>
+            {weather.airTemp != null ? `${Math.round(weather.airTemp)}°C / ${cToF(weather.airTemp)}°F` : ''}
+            {weather.rainfall ? ' · 🌧️ Rain' : weather.airTemp != null ? ' · ☀️ Dry' : ''}
+          </div>
+        )}
+        {nextSession?.startTime && (
+          <div className="stream-countdown-wrap">
+            <div style={{
+              fontSize: '0.85rem', color: '#999', marginBottom: 'var(--sp-3)',
+              fontFamily: 'var(--font-display)', fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.08em',
+            }}>
+              Countdown to {nextSession.sessionName}
+            </div>
+            <Countdown targetDate={nextSession.startTime} size="large" />
+          </div>
+        )}
+      </div>
+
+      {/* Schedule + Status */}
+      <div className="stream-pre-grid">
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Weekend Schedule</div>
+          {sessions?.length > 0
+            ? <SessionSchedule sessions={sessions} nextSessionStart={nextSession?.startTime} />
+            : <div style={{ color: '#555', fontSize: '0.8rem' }}>Schedule loading…</div>
+          }
+        </div>
+
+        <div className="stream-pre-card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="stream-pre-card-hdr">Session Status</div>
+          <div className="stream-status-badge">● No Active Session</div>
+          <p style={{ color: '#666', fontSize: '0.8rem', lineHeight: 1.6, marginBottom: 'var(--sp-4)' }}>
+            Live timing will appear automatically when the session begins.
+            <br />Best-effort live timing — may be delayed.
+          </p>
+        </div>
+      </div>
+
+      {/* Race info + Weather */}
+      <div className="stream-pre-grid" style={{ borderTop: '1px solid #0f0f0f' }}>
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Race Information</div>
+          {race?.round      && <div className="stream-info-row"><div className="stream-info-label">ROUND</div><div className="stream-info-val">{race.round}</div></div>}
+          {race?.raceDateTimeUtc && <div className="stream-info-row"><div className="stream-info-label">RACE DATE</div><div className="stream-info-val">{fmtTime(race.raceDateTimeUtc)}</div></div>}
+          {race?.circuitName && <div className="stream-info-row"><div className="stream-info-label">CIRCUIT</div><div className="stream-info-val">{race.circuitName}</div></div>}
+          {race?.locality   && <div className="stream-info-row"><div className="stream-info-label">LOCATION</div><div className="stream-info-val">{[race.locality, race.country].filter(Boolean).join(', ')}</div></div>}
+        </div>
+
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Track Weather</div>
+          {weather ? (
+            <>
+              {weather.airTemp   != null && <div className="stream-info-row"><div className="stream-info-label">AIR TEMP</div><div className="stream-info-val">{Math.round(weather.airTemp)}°C / {cToF(weather.airTemp)}°F</div></div>}
+              {weather.trackTemp != null && <div className="stream-info-row"><div className="stream-info-label">TRACK TEMP</div><div className="stream-info-val">{Math.round(weather.trackTemp)}°C / {cToF(weather.trackTemp)}°F</div></div>}
+              {weather.windSpeed != null && <div className="stream-info-row"><div className="stream-info-label">WIND</div><div className="stream-info-val">{Math.round(weather.windSpeed)} km/h</div></div>}
+              {weather.humidity  != null && <div className="stream-info-row"><div className="stream-info-label">HUMIDITY</div><div className="stream-info-val">{Math.round(weather.humidity)}%</div></div>}
+              <div className="stream-info-row"><div className="stream-info-label">CONDITIONS</div><div className="stream-info-val">{weather.rainfall ? '🌧️ Rain' : '☀️ Dry'}</div></div>
+            </>
+          ) : (
+            <div style={{ color: '#555', fontSize: '0.8rem' }}>Weather data not yet available</div>
+          )}
+        </div>
+      </div>
+
+      <div className="stream-no-session-msg">
+        <p>No active session. Live timing, leaderboard, sectors, and race control will populate automatically when the session begins.</p>
+      </div>
+    </div>
+  )
+}
+
+// ── MODE: best_effort_live ────────────────────────────────────────────────────
+
+function LiveView({ data, ageMs }) {
+  const { activeSession, leaderboard, raceControl, weather, trackStatus, currentLap, totalLaps, locations, stale, warnings } = data
+  const [selectedNum, setSelectedNum] = useState(null)
+
+  const sessionType = activeSession?.sessionType || ''
+  const isRace      = sessionType === 'Race' || sessionType === 'Sprint'
+
+  const selectedDriver = selectedNum
+    ? leaderboard.find(p => p.number === selectedNum)
+    : leaderboard[0] || null
+
+  const ageSec = ageMs != null ? Math.floor(ageMs / 1000) : null
 
   return (
     <div className="stream-body" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
 
-      {/* Session header bar */}
+      <TrackStatusBanner trackStatus={trackStatus} />
+
+      {/* Session header */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: 'var(--sp-3) var(--sp-8)', borderBottom: '1px solid #111',
         background: '#060609', flexWrap: 'wrap', gap: 'var(--sp-4)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-5)' }}>
-          {/* LIVE badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-5)', flexWrap: 'wrap' }}>
           <span style={{
-            fontFamily:'var(--font-display)', fontSize:'0.72rem', fontWeight:900,
-            textTransform:'uppercase', letterSpacing:'0.14em', color:'var(--red)',
-            display:'flex', alignItems:'center', gap:6,
-            animation:'pulseLive 1.4s ease-in-out infinite',
+            fontFamily: 'var(--font-display)', fontSize: '0.72rem', fontWeight: 900,
+            color: 'var(--red)', animation: 'pulseLive 1.4s ease-in-out infinite',
+            display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            ● LIVE NOW
+            {data.authenticated ? '● LIVE' : '● BEST-EFFORT LIVE'}
           </span>
-
-          {/* Session name */}
-          <span style={{
-            fontFamily:'var(--font-display)', fontSize:'0.85rem', fontWeight:800,
-            textTransform:'uppercase', letterSpacing:'0.06em', color:'#fff',
-          }}>
-            {session?.name || 'Session'}
-          </span>
-
-          {/* Lap counter (race only) */}
-          {isRace && session?.lap != null && (
-            <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.9rem', color:'#666' }}>
-              LAP <span style={{ color:'#fff', fontWeight:700 }}>{session.lap}</span>
+          {activeSession?.sessionName && (
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.85rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {activeSession.sessionName}
             </span>
           )}
-
-          {/* Qual label */}
-          {isQual && (
-            <span style={{ fontFamily:'var(--font-display)', fontSize:'0.72rem', fontWeight:800, color:'#f59e0b', textTransform:'uppercase', letterSpacing:'0.08em' }}>
-              {session.segment || 'Qualifying'}
+          {isRace && currentLap != null && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: '#666' }}>
+              LAP{' '}
+              <span style={{ color: '#fff', fontWeight: 700 }}>{currentLap}</span>
+              {totalLaps != null && (
+                <span style={{ color: '#444' }}> / {totalLaps}</span>
+              )}
             </span>
           )}
         </div>
-
-        <div style={{ display:'flex', alignItems:'center', gap:'var(--sp-5)' }}>
-          {/* Flag state */}
-          {session?.flag && flagColor && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-5)', flexWrap: 'wrap' }}>
+          <WeatherBar weather={weather} />
+          {ageSec != null && (
             <span style={{
-              fontFamily:'var(--font-display)', fontSize:'0.72rem', fontWeight:900,
-              textTransform:'uppercase', letterSpacing:'0.1em', color: flagColor,
-              padding:'3px 10px', borderRadius:'2px',
-              border:`1px solid ${flagColor}44`, background:`${flagColor}12`,
-              animation: 'pulseLive 1.6s ease-in-out infinite',
+              fontSize: 10, fontFamily: 'monospace',
+              color: ageSec > 45 ? '#e63946' : ageSec > 20 ? '#fa0' : '#2e2e2e',
+              padding: '1px 5px', border: `1px solid ${ageSec > 45 ? '#3a0000' : '#1e1e1e'}`,
             }}>
-              {session.flag === 'sc' ? 'SAFETY CAR' : session.flag === 'vsc' ? 'VSC' : session.flag.toUpperCase()}
+              {ageSec > 45 ? `⚠ ${ageSec}s ago` : `↻ ${ageSec}s ago`}
             </span>
           )}
-
-          {/* Weather */}
-          {weather && (
-            <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color:'#555' }}>
-              {Math.round(weather.airTemp ?? 0)}°C / {cToF(weather.airTemp ?? 0)}°F
-              {weather.trackTemp != null && ` · Track ${Math.round(weather.trackTemp)}°C / ${cToF(weather.trackTemp)}°F`}
-              {' · '}{weather.rainfall ? '🌧️' : '☀️'}
-            </span>
-          )}
+          {stale && <span style={{ color: '#fa0', fontSize: 10 }}>STALE</span>}
         </div>
       </div>
 
-      {/* Main: track map + position tower */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', flex:1, minHeight:0 }}>
+      {warnings?.length > 0 && (
+        <div style={{ background: '#1a0000', borderBottom: '1px solid #3a0000', padding: '6px 24px', fontSize: 11, color: '#f87171' }}>
+          {warnings.join(' · ')}
+        </div>
+      )}
 
-        {/* Track map */}
-        <div style={{ borderRight:'1px solid #0f0f0f', padding:'var(--sp-5)', display:'flex', flexDirection:'column', background:'#040406' }}>
-          <div style={{ fontFamily:'var(--font-display)', fontSize:'0.6rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.14em', color:'#333', marginBottom:'var(--sp-3)', display:'flex', alignItems:'center', gap:8 }}>
-            <span style={{ width:6, height:6, borderRadius:'50%', background:'var(--red)', display:'inline-block', animation:'pulseLive 1.4s ease-in-out infinite' }} />
-            Live Track Positions
-          </div>
-          <TrackMap locations={locations} positions={positions} series={series} />
+      {/* Main grid */}
+      <div className="stream-live-grid">
 
-          {/* Race control below map */}
-          {raceControl.length > 0 && (
-            <div style={{ marginTop:'auto', paddingTop:'var(--sp-4)' }}>
-              <div style={{ fontFamily:'var(--font-display)', fontSize:'0.58rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.16em', color:'#333', marginBottom:'var(--sp-2)' }}>
-                Race Control
-              </div>
-              <RaceControlFeed messages={raceControl.slice(0, 4)} />
-            </div>
-          )}
+        {/* Left: leaderboard + telemetry */}
+        <div style={{ borderRight: '1px solid #141414', display: 'flex', flexDirection: 'column' }}>
+          <HubPanel title={`TIMING — ${activeSession?.sessionName?.toUpperCase() || 'SESSION'}`}>
+            <Leaderboard
+              leaderboard={leaderboard}
+              sessionType={sessionType}
+              selectedDriver={selectedNum}
+              onSelect={setSelectedNum}
+            />
+          </HubPanel>
+          <HubPanel title={selectedDriver ? `TELEMETRY — #${selectedDriver.number} ${selectedDriver.short}` : 'TELEMETRY — click a driver'}>
+            <TelemetryPanel driver={selectedDriver} />
+          </HubPanel>
         </div>
 
-        {/* Position tower */}
-        <div style={{ display:'flex', flexDirection:'column', background:'#040406', overflow:'hidden' }}>
-          {/* Tower header */}
-          <div style={{
-            display:'grid', gridTemplateColumns:'28px 3px 1fr 1fr', gap:'0 8px',
-            padding:'8px 16px', background:'#060609',
-            fontFamily:'var(--font-display)', fontSize:'0.58rem', fontWeight:800,
-            textTransform:'uppercase', letterSpacing:'0.1em', color:'#333',
-            borderBottom:'1px solid #0f0f0f',
-          }}>
-            <span>P</span><span/><span>Driver</span>
-            <span style={{textAlign:'right'}}>{isRace ? 'GAP' : 'BEST LAP'}</span>
-          </div>
-
-          {/* Rows */}
-          <div style={{ overflowY:'auto', flex:1 }}>
-            {positions.slice(0, 20).map((p, i) => (
-              <div
-                key={p.number || i}
-                style={{
-                  display:'grid', gridTemplateColumns:'28px 3px 1fr 1fr', gap:'0 8px',
-                  padding:'6px 16px', borderBottom:'1px solid #080810',
-                  alignItems:'center',
-                  background: p.pos <= 3 ? 'rgba(255,255,255,0.015)' : 'transparent',
-                }}
-              >
-                {/* Position */}
-                <span style={{
-                  fontFamily:'var(--font-mono)', fontSize:'0.75rem', fontWeight:800,
-                  color: p.pos===1?'#FFD700':p.pos===2?'#C0C0C0':p.pos===3?'#CD7F32':'#444',
-                  textAlign:'center',
-                }}>
-                  {p.pos}
-                </span>
-
-                {/* Team stripe */}
-                <div style={{ width:3, height:22, borderRadius:2, background:p.teamColor||'#333' }} />
-
-                {/* Driver */}
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--font-display)', fontSize:'0.8rem', fontWeight:700, letterSpacing:'0.01em', color:'#fff', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {p.driver}
-                  </div>
-                  <div style={{ fontFamily:'var(--font-display)', fontSize:'0.58rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'#333' }}>
-                    {p.team}
-                    {p.compound && (
-                      <span style={{ marginLeft:6, color:p.compoundColor||'#555' }}>
-                        {p.compound[0]}{p.tyreAge != null ? p.tyreAge : ''}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Gap / lap time */}
-                <div style={{ textAlign:'right' }}>
-                  {isRace ? (
-                    p.pos === 1
-                      ? <span style={{ fontFamily:'var(--font-display)', fontSize:'0.62rem', fontWeight:900, color:'var(--red)', textTransform:'uppercase', letterSpacing:'0.08em' }}>LEADER</span>
-                      : <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.75rem', color:'#aaa' }}>{p.gap || '—'}s</span>
-                  ) : (
-                    <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.75rem', color:p.pos===1?'#f59e0b':'#aaa' }}>{p.fastestLap || '—'}</span>
-                  )}
-                </div>
-              </div>
-            ))}
+        {/* Right: track map + race control */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {(locations?.length > 3) && (
+            <HubPanel title="LIVE TRACK POSITIONS">
+              <TrackMap locations={locations} positions={leaderboard} series="f1" />
+            </HubPanel>
+          )}
+          <HubPanel title={`RACE CONTROL${raceControl.length ? ` (${raceControl.length})` : ''}`}>
+            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              <RaceControlFeed messages={raceControl.slice(0, 15)} />
+            </div>
+          </HubPanel>
+          <div style={{ padding: '8px 10px', borderTop: '1px solid #141414', marginTop: 'auto' }}>
+            <div style={{ fontSize: 9, color: '#2a2a2a', letterSpacing: '0.08em', fontFamily: 'var(--font-display)', fontWeight: 700, textTransform: 'uppercase' }}>
+              {data.authenticated
+                ? 'Live timing via OpenF1 real-time API · Unofficial RaceNRoam watch party dashboard · Not affiliated with F1, FIA, or FOM'
+                : 'Best-effort live timing — may be delayed · Source: OpenF1 · Unofficial watch party dashboard'}
+            </div>
           </div>
         </div>
       </div>
@@ -257,161 +525,287 @@ function LiveStreamBody({ liveData, series, meta }) {
   )
 }
 
-// ── Idle / Pre-race Layout ────────────────────────────────────
-// Shown when no session is active — countdown, standings, talking points
+function HubPanel({ title, children }) {
+  return (
+    <div style={{ borderBottom: '1px solid #141414' }}>
+      <div style={{ padding: '5px 10px', background: '#0c0c0c', borderBottom: '1px solid #141414', fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', color: '#2a2a2a' }}>
+        {title}
+      </div>
+      <div style={{ padding: '8px' }}>{children}</div>
+    </div>
+  )
+}
 
-function IdleStreamBody({ d, meta, series }) {
-  const race     = d.featuredRace
-  const standings = d.standings?.drivers || []
-  const points   = d.talkingPoints || []
-  const weather  = d.weather
-  const schedule = d.schedule || []
+// ── MODE: post_session ────────────────────────────────────────────────────────
+
+function PostSessionView({ data }) {
+  const { latestSession, leaderboard, raceControl, nextSession, sessions } = data
 
   return (
-    <div className="stream-body">
-      {/* Race hero + countdown */}
-      <div className="stream-hero">
-        {race ? (
-          <>
-            <div className="stream-race-title">{race.name}</div>
-            <div className="stream-track">
-              {race.track}{race.location ? ` · ${race.location}` : ''}
-              {race.round ? ` · Round ${race.round}` : ''}
-            </div>
-            {weather && (
-              <div style={{ fontSize:'0.8rem', color:'#555', marginBottom:'var(--sp-4)' }}>
-                {weather.temperature != null
-                  ? `${Math.round(weather.temperature)}°C / ${cToF(weather.temperature)}°F · `
-                  : ''}
-                {weather.conditions}
-                {weather.rainChance && weather.rainChance !== '0%' ? ` · ${weather.rainChance} rain` : ''}
-              </div>
-            )}
-            {race.date && (
-              <div className="stream-countdown-wrap">
-                <Countdown targetDate={race.date} size="large" />
-              </div>
-            )}
-          </>
-        ) : (
-          <div style={{ color:'#444', fontSize:'1.25rem' }}>No upcoming race found</div>
+    <div className="stream-body" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: 'var(--sp-6) var(--sp-8)', borderBottom: '1px solid #0f0f0f', background: '#040406' }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          fontFamily: 'var(--font-display)', fontSize: '0.65rem', fontWeight: 900,
+          textTransform: 'uppercase', letterSpacing: '0.14em', color: '#22c55e',
+          marginBottom: 'var(--sp-3)',
+        }}>
+          ✓ SESSION COMPLETE
+        </div>
+        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)', letterSpacing: '0.02em' }}>
+          {latestSession?.sessionName || 'Session'}
+        </div>
+        {latestSession?.endTime && (
+          <div style={{ color: '#555', fontSize: '0.8rem', marginTop: 4 }}>
+            Ended {fmtTime(latestSession.endTime)}
+          </div>
         )}
       </div>
 
-      {/* Standings + Schedule/Talking points */}
-      <div className="stream-panels">
-        <div className="stream-panel">
-          <div className="stream-panel-hdr">Championship Standings</div>
-          {standings.slice(0, 6).map((dr, i) => (
-            <div key={i} className="stream-standing-row">
-              <span className="stream-standing-pos">{dr.pos || i + 1}</span>
-              <span className="stream-standing-name">{dr.driver}</span>
-              <span className="stream-standing-pts">{dr.pts} pts</span>
-            </div>
-          ))}
-          {!standings.length && <div style={{ color:'#333', fontSize:'0.78rem' }}>Loading…</div>}
+      <div className="stream-pre-grid">
+        {/* Final results */}
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Final Classification</div>
+          {leaderboard.length > 0 ? (
+            <Leaderboard
+              leaderboard={leaderboard}
+              sessionType={latestSession?.sessionType || ''}
+              selectedDriver={null}
+              onSelect={() => {}}
+            />
+          ) : (
+            <div style={{ color: '#555', fontSize: '0.8rem' }}>Results not yet available</div>
+          )}
         </div>
 
-        <div className="stream-panel">
-          {schedule.length > 0 && (
+        {/* Next session or complete */}
+        <div className="stream-pre-card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+          {nextSession ? (
             <>
-              <div className="stream-panel-hdr">Weekend Schedule</div>
-              {schedule.slice(0, 3).map((s, i) => (
-                <div key={i} className="stream-tp">
-                  <span style={{ fontWeight:700, color:meta.color, marginRight:8 }}>{s.session}</span>
-                  {s.startTime ? fmt(s.startTime) : ''}
-                </div>
-              ))}
-              <div style={{ height:12 }} />
+              <div className="stream-pre-card-hdr">Next Session</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
+                {nextSession.sessionName}
+              </div>
+              <div style={{ color: '#555', fontSize: '0.8rem' }}>{fmtTime(nextSession.startTime)}</div>
+              <Countdown targetDate={nextSession.startTime} size="normal" />
+            </>
+          ) : (
+            <>
+              <div className="stream-pre-card-hdr">Weekend Status</div>
+              <div style={{ color: '#22c55e', fontFamily: 'var(--font-display)', fontSize: '0.9rem', fontWeight: 700 }}>
+                Race Weekend Complete
+              </div>
             </>
           )}
-          <div className="stream-panel-hdr">Talking Points</div>
-          {points.slice(0, 3).map((pt, i) => (
-            <div key={i} className="stream-tp">
-              <span className="stream-tp-num">{i + 1}.</span>{pt}
-            </div>
-          ))}
-          {!points.length && <div style={{ color:'#333', fontSize:'0.78rem' }}>Loading…</div>}
+
+          {sessions?.length > 0 && (
+            <>
+              <div className="stream-pre-card-hdr" style={{ marginTop: 'var(--sp-4)' }}>Full Schedule</div>
+              <SessionSchedule sessions={sessions} nextSessionStart={nextSession?.startTime} />
+            </>
+          )}
         </div>
+      </div>
+
+      {raceControl.length > 0 && (
+        <div style={{ padding: 'var(--sp-4) var(--sp-6)', borderTop: '1px solid #0f0f0f' }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.6rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', color: 'var(--red)', marginBottom: 'var(--sp-3)' }}>
+            Race Control
+          </div>
+          <RaceControlFeed messages={raceControl.slice(0, 4)} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── MODE: no_active_session ───────────────────────────────────────────────────
+
+function NoSessionView({ data }) {
+  const { race, nextSession, sessions } = data
+
+  return (
+    <div className="stream-body" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div className="stream-hero">
+        {race?.raceName && <div className="stream-race-title">{race.raceName}</div>}
+        {(race?.circuitName || race?.locality) && (
+          <div className="stream-track">
+            {[race?.circuitName, race?.locality, race?.country].filter(Boolean).join(' · ')}
+            {race?.round ? ` · Round ${race.round}` : ''}
+          </div>
+        )}
+        {nextSession?.startTime && (
+          <div className="stream-countdown-wrap">
+            <div style={{ fontSize: '0.85rem', color: '#999', marginBottom: 'var(--sp-3)', fontFamily: 'var(--font-display)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Countdown to {nextSession.sessionName}
+            </div>
+            <Countdown targetDate={nextSession.startTime} size="large" />
+          </div>
+        )}
+      </div>
+
+      <div className="stream-pre-grid">
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Race Information</div>
+          {race?.round       && <div className="stream-info-row"><div className="stream-info-label">ROUND</div><div className="stream-info-val">{race.round}</div></div>}
+          {race?.raceDateTimeUtc && <div className="stream-info-row"><div className="stream-info-label">RACE DATE</div><div className="stream-info-val">{fmtTime(race.raceDateTimeUtc)}</div></div>}
+          {race?.circuitName && <div className="stream-info-row"><div className="stream-info-label">CIRCUIT</div><div className="stream-info-val">{race.circuitName}</div></div>}
+          {race?.locality    && <div className="stream-info-row"><div className="stream-info-label">LOCATION</div><div className="stream-info-val">{[race.locality, race.country].filter(Boolean).join(', ')}</div></div>}
+          {!race && <div style={{ color: '#555', fontSize: '0.8rem' }}>No upcoming race data available</div>}
+        </div>
+
+        <div className="stream-pre-card">
+          <div className="stream-pre-card-hdr">Session Status</div>
+          <div className="stream-status-badge">● No Active Session</div>
+          <p style={{ color: '#666', fontSize: '0.8rem', lineHeight: 1.6 }}>
+            {nextSession
+              ? `Next session: ${nextSession.sessionName} on ${fmtTime(nextSession.startTime)}`
+              : 'No upcoming sessions found for this race weekend.'}
+          </p>
+        </div>
+      </div>
+
+      {sessions?.length > 0 && (
+        <div style={{ padding: 'var(--sp-4) var(--sp-6)', borderTop: '1px solid #0f0f0f' }}>
+          <SessionSchedule sessions={sessions} nextSessionStart={nextSession?.startTime} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── MODE: unavailable ─────────────────────────────────────────────────────────
+
+function UnavailableView({ data }) {
+  return (
+    <div className="stream-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+      <div style={{ textAlign: 'center', maxWidth: 480, padding: 'var(--sp-8)' }}>
+        <div style={{ fontSize: '2rem', marginBottom: 'var(--sp-4)' }}>📡</div>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 900, color: '#555', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 'var(--sp-4)' }}>
+          Live Timing Unavailable
+        </div>
+        {data?.warnings?.length > 0 && (
+          <div style={{ color: '#444', fontSize: '0.8rem', marginBottom: 'var(--sp-4)', lineHeight: 1.6 }}>
+            {data.warnings.join(' ')}
+          </div>
+        )}
+        <p style={{ color: '#333', fontSize: '0.8rem' }}>
+          Data will appear automatically when APIs recover. No manual refresh required.
+        </p>
       </div>
     </div>
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────
+// ── MODE: loading ─────────────────────────────────────────────────────────────
+
+function LoadingView({ meta }) {
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div className="spinner" style={{ borderTopColor: meta?.color || '#e63946', margin: '0 auto 16px' }} />
+        <div style={{ color: '#444', fontSize: '0.8rem' }}>Loading…</div>
+      </div>
+    </div>
+  )
+}
+
+// ── Footer ────────────────────────────────────────────────────────────────────
+
+function StreamFooter({ mode, lastFetch, stale }) {
+  const isLiveMode = mode === 'live' || mode === 'best_effort_live'
+  const right = isLiveMode
+    ? `● ${mode === 'live' ? 'Live' : 'Best-effort live'} timing · OpenF1${stale ? ' · STALE' : ''}`
+    : lastFetch ? `Auto-refresh · Last: ${fmtShortTime(lastFetch.toISOString())}` : 'Auto-refresh'
+
+  return (
+    <div className="stream-footer">
+      <span className="stream-footer-text">RaceNRoam · Stream-safe · No broadcast content</span>
+      <span className="stream-footer-text">{right}</span>
+    </div>
+  )
+}
+
+// ── Non-F1 fallback ───────────────────────────────────────────────────────────
+
+function NoFreeApiView({ series, liveData }) {
+  const url = liveData?.officialUrl
+  return (
+    <div className="stream-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+      <div style={{ textAlign: 'center', padding: 'var(--sp-8)' }}>
+        <div style={{ fontSize: '2rem', marginBottom: 'var(--sp-4)' }}>📡</div>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 900, color: '#555', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 'var(--sp-4)' }}>
+          No Free Live API for {series.toUpperCase()}
+        </div>
+        {url && (
+          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#7ecff4', fontSize: '0.85rem' }}>
+            View Official Live Timing ↗
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function StreamPage() {
-  const [params]  = useSearchParams()
-  const series    = params.get('series') || DEFAULT_SERIES
-  const meta      = SERIES_META[series] || SERIES_META[DEFAULT_SERIES]
+  const [params]     = useSearchParams()
+  const series       = params.get('series') || 'f1'
+  const meta         = SERIES_META[series] || SERIES_META.f1 || {}
 
-  // Regular series data (standings, schedule, talking points)
-  const [data,       setData]       = useState(null)
-  const [loading,    setLoading]    = useState(true)
+  const { liveData, liveLoading, refetchLive } = useLiveRace(series)
   const [lastFetch,  setLastFetch]  = useState(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [ageMs,      setAgeMs]      = useState(null)
 
-  const loadSeries = useCallback(async () => {
-    try {
-      const r = await getSeries(series)
-      setData(r)
-      setLastFetch(new Date())
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [series])
-
-  useEffect(() => { loadSeries() }, [loadSeries])
-  useAutoRefresh(loadSeries, REFRESH_MS, true)
-
-  // Live race data (OpenF1 for F1, NASCAR live feed for NASCAR)
-  const { liveData, refetchLive } = useLiveRace(series)
-  const isSessionLive = !!liveData?.isLive
+  // Track last fetch timestamp + data age
+  useEffect(() => {
+    if (!liveData) return
+    const ts = new Date()
+    setLastFetch(ts)
+    setAgeMs(0)
+    const id = setInterval(() => setAgeMs(Date.now() - ts.getTime()), 1000)
+    return () => clearInterval(id)
+  }, [liveData])
 
   function handleRefresh() {
     setRefreshing(true)
-    loadSeries()
-    refetchLive()
+    refetchLive().finally(() => setRefreshing(false))
   }
 
-  const d = data?.data || data || {}
+  const mode = liveData?.mode ?? null
 
   return (
-    <div className="stream-layout" style={{ '--hub-color': meta.color, display:'flex', flexDirection:'column', minHeight:'100vh' }}>
+    <div className="stream-layout" style={{ '--hub-color': meta.color, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <StreamTopbar
-        series={series}
-        meta={meta}
-        refreshing={refreshing}
-        lastFetch={lastFetch}
+        series={series} meta={meta}
+        refreshing={refreshing} lastFetch={lastFetch}
         onRefresh={handleRefresh}
       />
 
-      {loading ? (
-        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <div style={{ textAlign:'center' }}>
-            <div className="spinner" style={{ borderTopColor:meta.color, margin:'0 auto 16px' }} />
-            <div style={{ color:'#444', fontSize:'0.8rem' }}>Loading…</div>
-          </div>
-        </div>
-      ) : isSessionLive ? (
-        /* ── LIVE MODE: full OpenF1 timing layout ── */
-        <LiveStreamBody liveData={liveData} series={series} meta={meta} />
-      ) : (
-        /* ── IDLE MODE: countdown + standings + talking points ── */
-        <IdleStreamBody d={d} meta={meta} series={series} />
-      )}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        {/* Loading */}
+        {!liveData && liveLoading && <LoadingView meta={meta} />}
 
-      <div className="stream-footer">
-        <span className="stream-footer-text">
-          RaceNRoam · Stream-safe · No broadcast content
-        </span>
-        <span className="stream-footer-text">
-          {isSessionLive
-            ? '● Live via OpenF1 · updates every 20s'
-            : `Auto-refresh every ${REFRESH_MS / 1000}s${lastFetch ? ` · Last: ${fmt(lastFetch)}` : ''}`}
-        </span>
+        {/* Non-F1 no-api case */}
+        {liveData?.noFreeApi && <NoFreeApiView series={series} liveData={liveData} />}
+
+        {/* F1 state machine */}
+        {!liveData?.noFreeApi && mode === 'pre_session'                                  && <PreSessionView  data={liveData} />}
+        {!liveData?.noFreeApi && (mode === 'live' || mode === 'best_effort_live')        && <LiveView        data={liveData} ageMs={ageMs} />}
+        {!liveData?.noFreeApi && mode === 'post_session'                                 && <PostSessionView data={liveData} />}
+        {!liveData?.noFreeApi && mode === 'no_active_session'                            && <NoSessionView   data={liveData} />}
+        {!liveData?.noFreeApi && mode === 'unavailable'                                  && <UnavailableView data={liveData} />}
+        {!liveData?.noFreeApi && !mode && !liveLoading && <UnavailableView data={{ warnings: ['No data received.'] }} />}
       </div>
+
+      <StreamFooter mode={mode} lastFetch={lastFetch} stale={liveData?.stale} />
+
+      <style>{`
+        @keyframes pulseLive { 0%,100%{opacity:1} 50%{opacity:.4} }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+      `}</style>
     </div>
   )
 }
