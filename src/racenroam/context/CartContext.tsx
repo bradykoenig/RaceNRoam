@@ -7,6 +7,7 @@ export interface Product {
   category: string;
   badge?: string;
   stockNote?: string;
+  soldOut?: boolean;
   icon: "shirt" | "hat" | "hoodie" | "sticker";
   sizes?: string[];
   image?: string;

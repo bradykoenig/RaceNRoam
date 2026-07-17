@@ -44,21 +44,23 @@ export const Products = () => {
                   </div>
                 )}
                 {product.badge && (
-                  <div className="absolute top-3 right-3 font-tech text-[9px] font-bold tracking-[2px] bg-primary text-foreground px-2.5 py-1 clip-angle-xs">
+                  <div className={`absolute top-3 right-3 font-tech text-[9px] font-bold tracking-[2px] px-2.5 py-1 clip-angle-xs ${product.soldOut ? 'bg-grey-mid text-grey-light' : 'bg-primary text-foreground'}`}>
                     {product.badge}
                   </div>
                 )}
-                <div className="absolute inset-0 bg-primary/[0.08] border-2 border-primary/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <button onClick={() => handleAdd(product)} className="font-tech text-[11px] font-bold tracking-[2px] bg-primary text-foreground px-6 py-3 clip-angle-sm hover:bg-primary-bright">
-                    + ADD TO CART
-                  </button>
-                </div>
+                {!product.soldOut && (
+                  <div className="absolute inset-0 bg-primary/[0.08] border-2 border-primary/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <button onClick={() => handleAdd(product)} className="font-tech text-[11px] font-bold tracking-[2px] bg-primary text-foreground px-6 py-3 clip-angle-sm hover:bg-primary-bright">
+                      + ADD TO CART
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="p-5 border-t border-grey-mid">
                 <div className="font-tech text-[9px] tracking-[3px] text-primary-bright uppercase mb-1.5">{product.category}</div>
                 <h3 className="font-body text-lg font-bold tracking-wider text-foreground mb-1">{product.name}</h3>
-                {product.stockNote && (
-                  <p className="font-tech text-[9px] tracking-[2px] uppercase text-amber-400 mb-2">⚠ {product.stockNote}</p>
+                {product.soldOut && (
+                  <p className="font-tech text-[9px] tracking-[2px] uppercase text-grey-light mb-2">Out of stock</p>
                 )}
                 {product.sizes && (
                   <div className="flex gap-1 mb-3 flex-wrap">
@@ -80,7 +82,7 @@ export const Products = () => {
                 )}
                 <div className="flex items-center justify-between">
                   <span className="font-tech text-base font-bold text-foreground">${product.price.toFixed(2)}</span>
-                  <button onClick={() => handleAdd(product)} className="w-9 h-9 bg-grey-mid text-foreground flex items-center justify-center clip-angle-xs transition-colors hover:bg-primary text-xl leading-none">
+                  <button onClick={() => !product.soldOut && handleAdd(product)} disabled={product.soldOut} className={`w-9 h-9 flex items-center justify-center clip-angle-xs text-xl leading-none ${product.soldOut ? 'bg-grey-dark text-grey-light cursor-not-allowed opacity-40' : 'bg-grey-mid text-foreground transition-colors hover:bg-primary'}`}>
                     +
                   </button>
                 </div>
