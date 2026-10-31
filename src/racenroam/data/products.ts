@@ -1,5 +1,6 @@
 import type { Product } from "@/racenroam/context/CartContext";
 import pitLaneSnapbackImg from "@/racenroam/assets/pit-lane-snapback.jpg";
+import pitLaneSnapbackV2Img from "@/racenroam/assets/pit-lane-snapback-v2.jpg";
 import teeLightGrey from "@/racenroam/assets/tee-light-grey.png";
 import teeGrey from "@/racenroam/assets/tee-grey.png";
 import teeOlive from "@/racenroam/assets/tee-olive.png";
@@ -63,5 +64,14 @@ export const PRODUCTS: Product[] = [
     badge: "BACK IN STOCK",
     icon: "hat",
     image: pitLaneSnapbackImg,
+  },
+  {
+    id: "pit-lane-snapback-v2",
+    name: "Pit Lane Snap Back V2",
+    price: 25,
+    category: "Headwear",
+    badge: "NEW",
+    icon: "hat",
+    image: pitLaneSnapbackV2Img,
   },
 ];
