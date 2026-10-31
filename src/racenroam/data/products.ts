@@ -67,7 +67,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: "pit-lane-snapback-v2",
-    name: "Pit Lane Snap Back V2",
+    name: "Pit Lane Snapback V2",
     price: 25,
     category: "Headwear",
     badge: "NEW",
